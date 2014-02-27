@@ -285,6 +285,7 @@ private:
     //! Coercer, attached to the "rate/value" property on the tx dsps.
     double coerce_tx_samp_rate(tx_dsp_core_3000::sptr, size_t, const double);
     void update_tx_samp_rate(const size_t, const double);
+    void set_reg(const std::pair<boost::uint8_t, boost::uint32_t> &reg);
 };
 
 #endif /* INCLUDED_B200_IMPL_HPP */

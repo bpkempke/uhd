@@ -354,6 +354,12 @@ b200_impl::b200_impl(const uhd::device_addr_t& device_addr, usb_device_handle::s
     this->check_fw_compat(); //check after making
 
     ////////////////////////////////////////////////////////////////////
+    // create user-defined control objects
+    ////////////////////////////////////////////////////////////////////
+    _tree->create<std::pair<boost::uint8_t, boost::uint32_t> >(mb_path / "user" / "regs")
+        .subscribe(boost::bind(&b200_impl::set_reg, this, _1));
+
+    ////////////////////////////////////////////////////////////////////
     // setup the mboard eeprom
     ////////////////////////////////////////////////////////////////////
     const mboard_eeprom_t mb_eeprom(*_iface, "B200");
@@ -1235,9 +1241,14 @@ sensor_value_t b200_impl::get_ref_locked(void)
     return sensor_value_t("Ref", lock, "locked", "unlocked");
 }
 
+
 sensor_value_t b200_impl::get_fe_pll_locked(const bool is_tx)
 {
     const boost::uint32_t st = _local_ctrl->peek32(RB32_CORE_PLL);
     const bool locked = is_tx ? ((st & 0x1) > 0) : ((st & 0x2) > 0);
     return sensor_value_t("LO", locked, "locked", "unlocked");
+}
+
+void b200_impl::set_reg(const std::pair<boost::uint8_t, boost::uint32_t> &reg){
+	_iface->poke32(TOREG(reg.first), reg.second);
 }
