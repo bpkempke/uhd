@@ -1250,5 +1250,5 @@ sensor_value_t b200_impl::get_fe_pll_locked(const bool is_tx)
 }
 
 void b200_impl::set_reg(const std::pair<boost::uint8_t, boost::uint32_t> &reg){
-	_iface->poke32(TOREG(reg.first), reg.second);
+	_local_ctrl->poke32(TOREG(reg.first), reg.second);
 }
