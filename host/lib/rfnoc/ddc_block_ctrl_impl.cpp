@@ -139,10 +139,11 @@ public:
 
     void issue_stream_cmd(
             const uhd::stream_cmd_t &stream_cmd_,
-            const size_t chan
+            size_t chan
     ) {
         UHD_RFNOC_BLOCK_TRACE() << "ddc_block_ctrl_base::issue_stream_cmd()" << std::endl;
 
+        chan = 0;
         if (list_upstream_nodes().count(chan) == 0) {
             UHD_MSG(status) << "No upstream blocks." << std::endl;
             return;
