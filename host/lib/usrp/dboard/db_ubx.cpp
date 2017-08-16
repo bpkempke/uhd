@@ -1043,8 +1043,8 @@ private:
         }
         else if ((freq >= 100*fMHz) && (freq < 500*fMHz))
         {
-            set_cpld_field(SEL_LNA1, 0);
-            set_cpld_field(SEL_LNA2, 1);
+            set_cpld_field(SEL_LNA1, 1);
+            set_cpld_field(SEL_LNA2, 0);
             set_cpld_field(RXLO1_FSEL3, 1);
             set_cpld_field(RXLO1_FSEL2, 0);
             set_cpld_field(RXLO1_FSEL1, 0);
@@ -1059,8 +1059,8 @@ private:
         }
         else if ((freq >= 500*fMHz) && (freq < 800*fMHz))
         {
-            set_cpld_field(SEL_LNA1, 0);
-            set_cpld_field(SEL_LNA2, 1);
+            set_cpld_field(SEL_LNA1, 1);
+            set_cpld_field(SEL_LNA2, 0);
             set_cpld_field(RXLO1_FSEL3, 0);
             set_cpld_field(RXLO1_FSEL2, 0);
             set_cpld_field(RXLO1_FSEL1, 1);
@@ -1071,8 +1071,8 @@ private:
         }
         else if ((freq >= 800*fMHz) && (freq < 1000*fMHz))
         {
-            set_cpld_field(SEL_LNA1, 0);
-            set_cpld_field(SEL_LNA2, 1);
+            set_cpld_field(SEL_LNA1, 1);
+            set_cpld_field(SEL_LNA2, 0);
             set_cpld_field(RXLO1_FSEL3, 0);
             set_cpld_field(RXLO1_FSEL2, 0);
             set_cpld_field(RXLO1_FSEL1, 1);
@@ -1083,8 +1083,8 @@ private:
         }
         else if ((freq >= 1000*fMHz) && (freq < 1500*fMHz))
         {
-            set_cpld_field(SEL_LNA1, 0);
-            set_cpld_field(SEL_LNA2, 1);
+            set_cpld_field(SEL_LNA1, 1);
+            set_cpld_field(SEL_LNA2, 0);
             set_cpld_field(RXLO1_FSEL3, 0);
             set_cpld_field(RXLO1_FSEL2, 1);
             set_cpld_field(RXLO1_FSEL1, 0);
