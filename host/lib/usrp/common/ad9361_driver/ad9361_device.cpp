@@ -1058,16 +1058,16 @@ void ad9361_device_t::_setup_gain_control(bool agc)
         _io_iface->poke8(0x100, 0x6F); // Max Digital Gain
         _io_iface->poke8(0x101, 0x0A); // Max Digital Gain
         _io_iface->poke8(0x103, 0x08); // Max Digital Gain
-        _io_iface->poke8(0x104, 0x2F); // ADC Small Overload Threshold
-        _io_iface->poke8(0x105, 0x3A); // ADC Large Overload Threshold
+        _io_iface->poke8(0x104, 0x20); // ADC Small Overload Threshold
+        _io_iface->poke8(0x105, 0x30); // ADC Large Overload Threshold
         _io_iface->poke8(0x106, 0x22); // Max Digital Gain
-        _io_iface->poke8(0x107, 0x20); // Small LMT Overload Threshold
-        _io_iface->poke8(0x108, 0x26); // Large LMT Overload Threshold
+        _io_iface->poke8(0x107, 0x2B); // Small LMT Overload Threshold
+        _io_iface->poke8(0x108, 0x31); // Large LMT Overload Threshold
         _io_iface->poke8(0x111, 0x0A);
         _io_iface->poke8(0x11A, 0x1C);
         _io_iface->poke8(0x120, 0x8C);
         _io_iface->poke8(0x121, 0x44);
-        _io_iface->poke8(0x122, 0x44);
+        _io_iface->poke8(0x122, 0x14);
         _io_iface->poke8(0x123, 0x99);
         _io_iface->poke8(0x124, 0xF5);
         _io_iface->poke8(0x125, 0x7B);
@@ -1244,8 +1244,8 @@ double ad9361_device_t::_tune_bbvco(const double rate)
  * settings to the appropriate index after a re-tune. */
 void ad9361_device_t::_reprogram_gains()
 {
-    set_gain(RX, CHAIN_1,_rx1_gain);
-    set_gain(RX, CHAIN_2,_rx2_gain);
+    //set_gain(RX, CHAIN_1,_rx1_gain);
+    //set_gain(RX, CHAIN_2,_rx2_gain);
     set_gain(TX, CHAIN_1,_tx1_gain);
     set_gain(TX, CHAIN_2,_tx2_gain);
 }
@@ -2094,38 +2094,41 @@ double ad9361_device_t::set_gain(direction_t direction, chain_t chain, const dou
 
     if (direction == RX) {
 
-        int gain_index = static_cast<int>(value);
+        int gain_index;
 	int gain_index_min = 76;
 
-	//AII ADDITIONS: Use AGC by default
-	_setup_agc(chain, GAIN_MODE_SLOW_AGC);
-	for(int ii=0; ii < 40; ii++){
-            boost::this_thread::sleep(boost::posix_time::milliseconds(1));
-            //_io_iface->poke8(0x0FA, 0xE0);
-            if (chain == CHAIN_1) {
-	        gain_index = _io_iface->peek8(0x109);
-	    } else {
-	        gain_index = _io_iface->peek8(0x10c);
-	    }
-	    gain_index_min = (gain_index < gain_index_min) ? gain_index : gain_index_min;
-	}
+	//AII Fast AGC compensation technique
+	_setup_agc(chain, GAIN_MODE_FAST_AGC);
+	_io_iface->poke8(0x0FB, _io_iface->peek8(0x0FB) | 0x40);
+	_io_iface->poke8(0x014, _io_iface->peek8(0x014) | 0x02);
+	_io_iface->poke8(0x110, 0x08);
+        boost::this_thread::sleep(boost::posix_time::milliseconds(40));
+	gain_index_min = (chain == CHAIN_1) ? _io_iface->peek8(0x109) : _io_iface->peek8(0x10c);
 	_setup_agc(chain, GAIN_MODE_MANUAL);
 
-        ///* Clip the gain values to the proper min/max gain values. */
-        //if (gain_index > 76)
-        //    gain_index = 76;
-        //if (gain_index < 0)
-        //    gain_index = 0;
+	//AII ADDITIONS: Use AGC by default
+	//_setup_agc(chain, GAIN_MODE_SLOW_AGC);
+	//for(int ii=0; ii < 40; ii++){
+        //    boost::this_thread::sleep(boost::posix_time::milliseconds(1));
+        //    if (chain == CHAIN_1) {
+	//        gain_index = _io_iface->peek8(0x109);
+	//    } else {
+	//        gain_index = _io_iface->peek8(0x10c);
+	//    }
+	//    gain_index_min = (gain_index < gain_index_min) ? gain_index : gain_index_min;
+	//}
+	//_setup_agc(chain, GAIN_MODE_MANUAL);
 
+	std::cout << "setting gain of chain " << chain << " to " << gain_index_min << std::endl;
         if (chain == CHAIN_1) {
-            _rx1_gain = static_cast<double>(value);
+            _rx1_gain = static_cast<double>(gain_index_min);
             _io_iface->poke8(0x109, gain_index_min);
         } else {
-            _rx2_gain = static_cast<double>(value);
+            _rx2_gain = static_cast<double>(gain_index_min);
             _io_iface->poke8(0x10c, gain_index_min);
         }
 
-        return gain_index;
+        return gain_index_min;
     } else {
         /* Setting the below bits causes a change in the TX attenuation word
          * to immediately take effect. */
