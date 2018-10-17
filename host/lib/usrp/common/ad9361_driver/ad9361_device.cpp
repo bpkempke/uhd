@@ -2131,26 +2131,26 @@ double ad9361_device_t::set_gain(direction_t direction, chain_t chain, const dou
 	int gain_index_min = 76;
 
 	//AII Fast AGC compensation technique
-	_setup_agc(chain, GAIN_MODE_FAST_AGC);
-	_io_iface->poke8(0x0FB, _io_iface->peek8(0x0FB) | 0x40);
-	_io_iface->poke8(0x014, _io_iface->peek8(0x014) | 0x02);
-	_io_iface->poke8(0x110, 0x08);
-        boost::this_thread::sleep(boost::posix_time::milliseconds(40));
-	gain_index_min = (chain == CHAIN_1) ? _io_iface->peek8(0x109) : _io_iface->peek8(0x10c);
-	_setup_agc(chain, GAIN_MODE_MANUAL);
+	//_setup_agc(chain, GAIN_MODE_FAST_AGC);
+	//_io_iface->poke8(0x0FB, _io_iface->peek8(0x0FB) | 0x40);
+	//_io_iface->poke8(0x014, _io_iface->peek8(0x014) | 0x02);
+	//_io_iface->poke8(0x110, 0x08);
+        //boost::this_thread::sleep(boost::posix_time::milliseconds(40));
+	//gain_index_min = (chain == CHAIN_1) ? _io_iface->peek8(0x109) : _io_iface->peek8(0x10c);
+	//_setup_agc(chain, GAIN_MODE_MANUAL);
 
 	//AII ADDITIONS: Use AGC by default
-	//_setup_agc(chain, GAIN_MODE_SLOW_AGC);
-	//for(int ii=0; ii < 40; ii++){
-        //    boost::this_thread::sleep(boost::posix_time::milliseconds(1));
-        //    if (chain == CHAIN_1) {
-	//        gain_index = _io_iface->peek8(0x109);
-	//    } else {
-	//        gain_index = _io_iface->peek8(0x10c);
-	//    }
-	//    gain_index_min = (gain_index < gain_index_min) ? gain_index : gain_index_min;
-	//}
-	//_setup_agc(chain, GAIN_MODE_MANUAL);
+	_setup_agc(chain, GAIN_MODE_SLOW_AGC);
+	for(int ii=0; ii < 40; ii++){
+            boost::this_thread::sleep(boost::posix_time::milliseconds(1));
+            if (chain == CHAIN_1) {
+	        gain_index = _io_iface->peek8(0x109);
+	    } else {
+	        gain_index = _io_iface->peek8(0x10c);
+	    }
+	    gain_index_min = (gain_index < gain_index_min) ? gain_index : gain_index_min;
+	}
+	_setup_agc(chain, GAIN_MODE_MANUAL);
 
 	std::cout << "setting gain of chain " << chain << " to " << gain_index_min << std::endl;
         if (chain == CHAIN_1) {
