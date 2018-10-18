@@ -2108,7 +2108,7 @@ double ad9361_device_t::set_gain(direction_t direction, chain_t chain, const dou
 
 	//AII ADDITIONS: Use AGC by default
 	_setup_agc(chain, GAIN_MODE_SLOW_AGC);
-	for(int ii=0; ii < 40; ii++){
+	for(int ii=0; ii < 20; ii++){
             boost::this_thread::sleep(boost::posix_time::milliseconds(1));
             if (chain == CHAIN_1) {
 	        gain_index = _io_iface->peek8(0x109);
@@ -2119,7 +2119,6 @@ double ad9361_device_t::set_gain(direction_t direction, chain_t chain, const dou
 	}
 	_setup_agc(chain, GAIN_MODE_MANUAL);
 
-	std::cout << "setting gain of chain " << chain << " to " << gain_index_min << std::endl;
         if (chain == CHAIN_1) {
             _rx1_gain = static_cast<double>(gain_index_min);
             _io_iface->poke8(0x109, gain_index_min);
