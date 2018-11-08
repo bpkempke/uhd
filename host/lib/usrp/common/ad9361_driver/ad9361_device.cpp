@@ -140,7 +140,9 @@ void ad9361_device_t::_program_fir_filter(direction_t direction, chain_t chain, 
 
     /* Zero the unused taps just in case they have stale data */
     int addr;
+    //std::cout << "**** AD9361 (Chain " << ((chain == CHAIN_1) ? "1" : "2") << ") FIR filter: ";
     for (addr = num_taps; addr < 128; addr++) {
+	//std::cout << 0 << ", ";
         _io_iface->poke8(base + 0, addr);
         _io_iface->poke8(base + 1, 0x0);
         _io_iface->poke8(base + 2, 0x0);
@@ -151,6 +153,7 @@ void ad9361_device_t::_program_fir_filter(direction_t direction, chain_t chain, 
 
     /* Iterate through indirect programming of filter coeffs using ADI recomended procedure */
     for (addr = 0; addr < num_taps; addr++) {
+	//std::cout << ((coeffs[addr] > 32767) ? ((int)coeffs[addr])-65536 : coeffs[addr]) << ", ";
         _io_iface->poke8(base + 0, addr);
         _io_iface->poke8(base + 1, (coeffs[addr]) & 0xff);
         _io_iface->poke8(base + 2, (coeffs[addr] >> 8) & 0xff);
@@ -158,6 +161,7 @@ void ad9361_device_t::_program_fir_filter(direction_t direction, chain_t chain, 
         _io_iface->poke8(base + 4, 0x00);
         _io_iface->poke8(base + 4, 0x00);
     }
+    //std::cout << std::endl;
 
     /* UG-671 states (page 25) (paraphrased and clarified):
      " After the table has been programmed, write to register BASE+5 with the write bit D2 cleared and D1 high.
@@ -1061,8 +1065,8 @@ void ad9361_device_t::_setup_gain_control(bool agc)
         _io_iface->poke8(0x104, 0x20); // ADC Small Overload Threshold
         _io_iface->poke8(0x105, 0x30); // ADC Large Overload Threshold
         _io_iface->poke8(0x106, 0x22); // Max Digital Gain
-        _io_iface->poke8(0x107, 0x2B); // Small LMT Overload Threshold
-        _io_iface->poke8(0x108, 0x31); // Large LMT Overload Threshold
+        _io_iface->poke8(0x107, 0x18); // Small LMT Overload Threshold
+        _io_iface->poke8(0x108, 0x1F); // Large LMT Overload Threshold
         _io_iface->poke8(0x111, 0x0A);
         _io_iface->poke8(0x11A, 0x1C);
         _io_iface->poke8(0x120, 0x8C);
@@ -2105,6 +2109,13 @@ double ad9361_device_t::set_gain(direction_t direction, chain_t chain, const dou
         //boost::this_thread::sleep(boost::posix_time::milliseconds(40));
 	//gain_index_min = (chain == CHAIN_1) ? _io_iface->peek8(0x109) : _io_iface->peek8(0x10c);
 	//_setup_agc(chain, GAIN_MODE_MANUAL);
+	
+	//std::cout << "*** AD9361 0x003: " << int(_io_iface->peek8(0x003)) << std::endl;
+	//std::cout << "*** AD9361 0x1DB: " << int(_io_iface->peek8(0x1DB)) << std::endl;
+	//std::cout << "*** AD9361 0x1DC: " << int(_io_iface->peek8(0x1DC)) << std::endl;
+	//std::cout << "*** AD9361 0x1DD: " << int(_io_iface->peek8(0x1DD)) << std::endl;
+	//std::cout << "*** AD9361 0x1DE: " << int(_io_iface->peek8(0x1DE)) << std::endl;
+	//std::cout << "*** AD9361 0x1DF: " << int(_io_iface->peek8(0x1DF)) << std::endl;
 
 	//AII ADDITIONS: Use AGC by default
 	_setup_agc(chain, GAIN_MODE_SLOW_AGC);
@@ -2118,6 +2129,9 @@ double ad9361_device_t::set_gain(direction_t direction, chain_t chain, const dou
 	    gain_index_min = (gain_index < gain_index_min) ? gain_index : gain_index_min;
 	}
 	_setup_agc(chain, GAIN_MODE_MANUAL);
+
+	////***BYPASS AGC****
+	//gain_index_min = value;
 
         if (chain == CHAIN_1) {
             _rx1_gain = static_cast<double>(gain_index_min);
