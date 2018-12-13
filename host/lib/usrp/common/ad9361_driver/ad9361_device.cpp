@@ -1056,14 +1056,14 @@ void ad9361_device_t::_setup_gain_control(bool agc)
     if (agc) {
         /*mode select bits must be written before hand!*/
         _io_iface->poke8(0x0FB, 0x08); // Table, Digital Gain, Man Gain Ctrl
-        _io_iface->poke8(0x0FC, 0x23); // Incr Step Size, ADC Overrange Size
+        _io_iface->poke8(0x0FC, 0x20); // Incr Step Size, ADC Overrange Size
         _io_iface->poke8(0x0FD, 0x4C); // Max Full/LMT Gain Table Index
         _io_iface->poke8(0x0FE, 0x44); // Decr Step Size, Peak Overload Time
         _io_iface->poke8(0x100, 0x6F); // Max Digital Gain
         _io_iface->poke8(0x101, 0x0A); // Max Digital Gain
         _io_iface->poke8(0x103, 0x08); // Max Digital Gain
-        _io_iface->poke8(0x104, 0x20); // ADC Small Overload Threshold
-        _io_iface->poke8(0x105, 0x30); // ADC Large Overload Threshold
+        _io_iface->poke8(0x104, 0x0E); // ADC Small Overload Threshold
+        _io_iface->poke8(0x105, 0x0F); // ADC Large Overload Threshold
         _io_iface->poke8(0x106, 0x22); // Max Digital Gain
         _io_iface->poke8(0x107, 0x18); // Small LMT Overload Threshold
         _io_iface->poke8(0x108, 0x1F); // Large LMT Overload Threshold
@@ -2129,6 +2129,10 @@ double ad9361_device_t::set_gain(direction_t direction, chain_t chain, const dou
 	    gain_index_min = (gain_index < gain_index_min) ? gain_index : gain_index_min;
 	}
 	_setup_agc(chain, GAIN_MODE_MANUAL);
+
+        //Integrate in some headroom for AGC (denoted by value)
+        gain_index_min -= value;
+        if(gain_index_min < 0) gain_index_min = 0;
 
 	////***BYPASS AGC****
 	//gain_index_min = value;
