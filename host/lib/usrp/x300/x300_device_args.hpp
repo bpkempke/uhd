@@ -8,6 +8,7 @@
 #define INCLUDED_X300_DEV_ARGS_HPP
 
 #include "x300_impl.hpp"
+#include "x300_defaults.hpp"
 #include <uhdlib/usrp/constrained_device_args.hpp>
 
 namespace uhd { namespace usrp { namespace x300 {
@@ -32,7 +33,8 @@ public:
         _niusrprio_rpc_port("niusrprio_rpc_port", NIUSRPRIO_DEFAULT_RPC_PORT),
         _has_fw_file("fw", false),
         _fw_file("fw", ""),
-        _blank_eeprom("blank_eeprom", false)
+        _blank_eeprom("blank_eeprom", false),
+        _enable_tx_dual_eth("enable_tx_dual_eth", false)
     {
         // nop
     }
@@ -92,6 +94,10 @@ public:
     bool get_blank_eeprom() const {
         return _blank_eeprom.get();
     }
+    bool get_enable_tx_dual_eth() const {
+        return _enable_tx_dual_eth.get();
+    }
+
 
     inline virtual std::string to_string() const {
         return  _master_clock_rate.to_string() + ", " +
@@ -112,12 +118,9 @@ private:
             // Some daughterboards may require other rates, but this default
             // works best for all newer daughterboards (i.e. CBX, WBX, SBX,
             // UBX, and TwinRX).
-            if (_master_clock_rate.get() == 200e6) {
-                _dboard_clock_rate.set(50e6);
-            } else if (_master_clock_rate.get() == 184.32e6) {
-                _dboard_clock_rate.set(46.08e6);
-            } else if (_master_clock_rate.get() == 120e6) {
-                _dboard_clock_rate.set(40e6);
+            if (_master_clock_rate.get() >= MIN_TICK_RATE &&
+                _master_clock_rate.get() <= MAX_TICK_RATE) {
+                _dboard_clock_rate.set(_master_clock_rate.get() / 4);
             } else {
                 throw uhd::value_error(
                     "Can't infer daughterboard clock rate. Specify "
@@ -149,9 +152,12 @@ private:
             PARSE_DEFAULT(_fw_file);
         }
         PARSE_DEFAULT(_blank_eeprom)
+        if (dev_args.has_key("enable_tx_dual_eth")){
+            _enable_tx_dual_eth.set(true);
+        }
 
         //Sanity check params
-        _enforce_discrete(_master_clock_rate, TICK_RATE_OPTIONS);
+        _enforce_range(_master_clock_rate, MIN_TICK_RATE, MAX_TICK_RATE);
         _enforce_discrete(_system_ref_rate, EXTERNAL_FREQ_OPTIONS);
         _enforce_discrete(_clock_source, CLOCK_SOURCE_OPTIONS);
         _enforce_discrete(_time_source, TIME_SOURCE_OPTIONS);
@@ -175,6 +181,7 @@ private:
     constrained_device_args_t::bool_arg            _has_fw_file;
     constrained_device_args_t::str_arg<true>       _fw_file;
     constrained_device_args_t::bool_arg            _blank_eeprom;
+    constrained_device_args_t::bool_arg            _enable_tx_dual_eth;
 };
 
 }}} //namespace

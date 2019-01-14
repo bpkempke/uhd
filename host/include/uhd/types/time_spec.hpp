@@ -10,7 +10,7 @@
 
 #include <uhd/config.hpp>
 #include <boost/operators.hpp>
-#include <ctime>
+#include <stdint.h>
 
 namespace uhd{
 
@@ -26,7 +26,10 @@ namespace uhd{
      * This gives the fractional seconds enough precision to unambiguously
      * specify a clock-tick/sample-count up to rates of several petahertz.
      */
-    class UHD_API time_spec_t : boost::additive<time_spec_t>, boost::totally_ordered<time_spec_t>{
+    class UHD_API time_spec_t : 
+        boost::additive<time_spec_t>,
+        boost::additive<time_spec_t, double>,
+        boost::totally_ordered<time_spec_t>{
     public:
 
         /*!
@@ -98,10 +101,9 @@ namespace uhd{
         //! Implement addable interface
         time_spec_t &operator+=(const time_spec_t &);
         time_spec_t &operator+=(double &);
-        time_spec_t operator+(double &);
-        time_spec_t operator+(const time_spec_t &);
         //! Implement subtractable interface
         time_spec_t &operator-=(const time_spec_t &);
+        time_spec_t &operator-=(double &);
 
     //private time storage details
     private:

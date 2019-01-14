@@ -186,14 +186,7 @@ public:
             stream_cmd.num_samps *= decimation;
         }
 
-        source_node_ctrl::sptr this_upstream_block_ctrl =
-                boost::dynamic_pointer_cast<source_node_ctrl>(list_upstream_nodes().at(chan).lock());
-        if (this_upstream_block_ctrl) {
-            this_upstream_block_ctrl->issue_stream_cmd(
-                    stream_cmd,
-                    get_upstream_port(chan)
-            );
-        }
+        source_block_ctrl_base::issue_stream_cmd(stream_cmd, chan);
     }
 
 private:
@@ -245,7 +238,7 @@ private:
         return range;
     }
 
-    double set_output_rate(const int requested_rate, const size_t chan)
+    double set_output_rate(const double requested_rate, const size_t chan)
     {
         const double input_rate = get_arg<double>("input_rate");
         const size_t decim_rate =

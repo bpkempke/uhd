@@ -305,7 +305,7 @@ class e320(ZynqComponents, PeriphManagerBase):
         for method_name in new_methods:
             try:
                 # Extract the sensor name from the getter
-                sensor_name = re.search(r"get_.*_sensor", method_name).string
+                sensor_name = re.search(r"get_(.*)_sensor", method_name).group(1)
                 # Register it with the MB sensor framework
                 self.mboard_sensor_callback_map[sensor_name] = method_name
                 self.log.trace("Adding %s sensor function", sensor_name)
@@ -645,7 +645,7 @@ class e320(ZynqComponents, PeriphManagerBase):
         """
         Get lock status of GPS as a sensor dict
         """
-        gps_locked = self.mboard_regs_control.get_gps_locked_val()
+        gps_locked = bool(self.mboard_regs_control.get_gps_locked_val())
         return {
             'name': 'gps_lock',
             'type': 'BOOLEAN',

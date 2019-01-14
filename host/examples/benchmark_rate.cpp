@@ -192,15 +192,15 @@ void benchmark_tx_rate(
     ) % NOW() % (usrp->get_tx_rate()/1e6) % tx_stream->get_num_channels() << std::endl;
 
     //setup variables and allocate buffer
-    uhd::tx_metadata_t md;
-    md.time_spec = usrp->get_time_now() + uhd::time_spec_t(INIT_DELAY);
-    md.has_time_spec = (tx_stream->get_num_channels() > 1);
     const size_t max_samps_per_packet = tx_stream->get_max_num_samps();
     std::vector<char> buff(max_samps_per_packet*uhd::convert::get_bytes_per_item(tx_cpu));
     std::vector<const void *> buffs;
     for (size_t ch = 0; ch < tx_stream->get_num_channels(); ch++)
         buffs.push_back(&buff.front()); //same buffer for each channel
+    // Create the metadata, and populate the time spec at the latest possible moment
+    uhd::tx_metadata_t md;
     md.has_time_spec = (buffs.size() != 1);
+    md.time_spec = usrp->get_time_now() + uhd::time_spec_t(INIT_DELAY);
 
     if (random_nsamps) {
         std::srand((unsigned int)time(NULL));
@@ -469,16 +469,17 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
     }
 
     std::cout << boost::format("[%s] Setting device timestamp to 0...") % NOW() << std::endl;
-    const bool sync_channels =
-            pps == "mimo" or
-            ref == "mimo" or
-            rx_channel_nums.size() > 1 or
-            tx_channel_nums.size() > 1
-    ;
-    if (!sync_channels) {
-       usrp->set_time_now(0.0);
+    if (pps == "mimo" or ref == "mimo") {
+        // only set the master's time, the slave's is automatically sync'd
+        usrp->set_time_now(uhd::time_spec_t(0.0), 0);
+        // ensure that the setter has completed
+        usrp->get_time_now();
+        // wait for the time to sync
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    } else if (rx_channel_nums.size() > 1 or tx_channel_nums.size() > 1) {
+        usrp->set_time_unknown_pps(uhd::time_spec_t(0.0));
     } else {
-       usrp->set_time_unknown_pps(uhd::time_spec_t(0.0));
+        usrp->set_time_now(0.0);
     }
 
     //spawn the receive test thread

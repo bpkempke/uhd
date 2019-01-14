@@ -100,10 +100,10 @@ public:
     virtual ~multi_usrp(void) = 0;
 
     //! A wildcard motherboard index
-    static const size_t ALL_MBOARDS = size_t(~0);
+    static const size_t ALL_MBOARDS;
 
     //! A wildcard channel index
-    static const size_t ALL_CHANS = size_t(~0);
+    static const size_t ALL_CHANS;
 
     //! A wildcard gain element name
     static const std::string ALL_GAINS;
@@ -144,7 +144,7 @@ public:
     //! Convenience method to get a RX streamer. See also uhd::device::get_rx_stream().
     virtual rx_streamer::sptr get_rx_stream(const stream_args_t &args) = 0;
 
-    //! Convenience method to get a TX streamer. See also uhd::device::get_rx_stream().
+    //! Convenience method to get a TX streamer. See also uhd::device::get_tx_stream().
     virtual tx_streamer::sptr get_tx_stream(const stream_args_t &args) = 0;
 
     /*!
@@ -342,15 +342,52 @@ public:
      */
     virtual void set_clock_config(const clock_config_t &clock_config, size_t mboard = ALL_MBOARDS) = 0;
 
-    /*!
-     * Set the time source for the usrp device.
-     * This sets the method of time synchronization,
-     * typically a pulse per second or an encoded time.
-     * Typical options for source: external, MIMO.
+    /*!  Set the time source for the USRP device
+     *
+     * This sets the method of time synchronization, typically a pulse per
+     * second signal. In order to time-align multiple USRPs, it is necessary to
+     * connect all of them to a common reference and provide them with the same
+     * time source.
+     * Typical values for \p source are 'internal', 'external'. Refer to the
+     * specific device manual for a full list of options.
+     *
+     * If the value for for \p source is not available for this device, it will
+     * throw an exception. Calling get_time_sources() will return a valid list
+     * of options for this method.
+     *
+     * Side effects: Some devices only support certain combinations of time and
+     * clock source. It is possible that the underlying device implementation
+     * will change the clock source when the time source changes and vice versa.
+     * Reading back the current values of clock and time source using
+     * get_clock_source() and get_time_source() is the only certain way of
+     * knowing which clock and time source are currently selected.
+     *
+     * This function does not force a re-initialization of the underlying
+     * hardware when the value does not change. Consider the following snippet:
+     * ~~~{.cpp}
+     * auto usrp = uhd::usrp::multi_usrp::make(device_args);
+     * // This may or may not cause the hardware to reconfigure, depending on
+     * // the default state of the device
+     * usrp->set_time_source("internal");
+     * // Now, the time source is definitely set to "internal"!
+     * // The next call probably won't do anything but will return immediately,
+     * // because the time source was already set to "internal"
+     * usrp->set_time_source("internal");
+     * // The time source is still guaranteed to be "internal" at this point
+     * ~~~
+     *
+     * See also:
+     * - set_clock_source()
+     * - set_sync_source()
+     *
      * \param source a string representing the time source
      * \param mboard which motherboard to set the config
+     * \throws uhd::value_error if \p source is an invalid option
      */
-    virtual void set_time_source(const std::string &source, const size_t mboard = ALL_MBOARDS) = 0;
+    virtual void set_time_source(
+            const std::string &source,
+            const size_t mboard = ALL_MBOARDS
+    ) = 0;
 
     /*!
      * Get the currently set time source.
@@ -366,14 +403,52 @@ public:
      */
     virtual std::vector<std::string> get_time_sources(const size_t mboard) = 0;
 
-    /*!
-     * Set the clock source for the usrp device.
-     * This sets the source for a 10 MHz reference clock.
-     * Typical options for source: internal, external, MIMO.
-     * \param source a string representing the clock source
+    /*!  Set the clock source for the USRP device
+     *
+     * This sets the source of the frequency reference, typically a 10 MHz
+     * signal. In order to frequency-align multiple USRPs, it is necessary to
+     * connect all of them to a common reference and provide them with the same
+     * clock source.
+     * Typical values for \p source are 'internal', 'external'. Refer to the
+     * specific device manual for a full list of options.
+     *
+     * If the value for for \p source is not available for this device, it will
+     * throw an exception. Calling get_clock_sources() will return a valid list
+     * of options for this method.
+     *
+     * Side effects: Some devices only support certain combinations of time and
+     * clock source. It is possible that the underlying device implementation
+     * will change the time source when the clock source changes and vice versa.
+     * Reading back the current values of clock and time source using
+     * get_clock_source() and get_time_source() is the only certain way of
+     * knowing which clock and time source are currently selected.
+     *
+     * This function does not force a re-initialization of the underlying
+     * hardware when the value does not change. Consider the following snippet:
+     * ~~~{.cpp}
+     * auto usrp = uhd::usrp::multi_usrp::make(device_args);
+     * // This may or may not cause the hardware to reconfigure, depending on
+     * // the default state of the device
+     * usrp->set_clock_source("internal");
+     * // Now, the clock source is definitely set to "internal"!
+     * // The next call probably won't do anything but will return immediately,
+     * // because the clock source was already set to "internal"
+     * usrp->set_clock_source("internal");
+     * // The clock source is still guaranteed to be "internal" at this point
+     * ~~~
+     *
+     * See also:
+     * - set_time_source()
+     * - set_sync_source()
+     *
+     * \param source a string representing the time source
      * \param mboard which motherboard to set the config
+     * \throws uhd::value_error if \p source is an invalid option
      */
-    virtual void set_clock_source(const std::string &source, const size_t mboard = ALL_MBOARDS) = 0;
+    virtual void set_clock_source(
+            const std::string &source,
+            const size_t mboard = ALL_MBOARDS
+    ) = 0;
 
     /*!
      * Get the currently set clock source.
@@ -388,6 +463,63 @@ public:
      * \return a vector of strings for possible settings
      */
     virtual std::vector<std::string> get_clock_sources(const size_t mboard) = 0;
+
+    /*! Set the reference/synchronization sources for the USRP device
+     *
+     * This is a shorthand for calling
+     * `set_sync_source(device_addr_t("clock_source=$CLOCK_SOURCE,time_source=$TIME_SOURCE"))`
+     *
+     * \param clock_source A string representing the clock source
+     * \param time_source A string representing the time source
+     * \param mboard which motherboard to set the config
+     * \throws uhd::value_error if the sources don't actually exist
+     */
+    virtual void set_sync_source(
+        const std::string &clock_source,
+        const std::string &time_source,
+        const size_t mboard = ALL_MBOARDS
+    ) = 0;
+
+    /*! Set the reference/synchronization sources for the USRP device
+     *
+     * Typically, this will set both clock and time source in a single call. For
+     * some USRPs, this may be significantly faster than calling
+     * set_time_source() and set_clock_source() individually.
+     *
+     * Example:
+     * ~~~{.cpp}
+     * auto usrp = uhd::usrp::multi_usrp::make("");
+     * usrp->set_sync_source(
+     *     device_addr_t("clock_source=external,time_source=external"));
+     * ~~~
+     *
+     * This function does not force a re-initialization of the underlying
+     * hardware when the value does not change. See also set_time_source() and
+     * set_clock_source() for more details.
+     *
+     * \param sync_source A dictionary representing the various source settings.
+     * \param mboard which motherboard to set the config
+     * \throws uhd::value_error if the sources don't actually exist or if the
+     *         combination of clock and time source is invalid.
+     */
+    virtual void set_sync_source(
+        const device_addr_t& sync_source,
+        const size_t mboard = ALL_MBOARDS
+    ) = 0;
+
+    /*! Get the currently set sync source.
+     *
+     * \param mboard which motherboard to get the config
+     * \return the dictionary representing the sync source settings
+     */
+    virtual device_addr_t get_sync_source(const size_t mboard) = 0;
+
+    /*! Get a list of available sync sources
+     *
+     * \param mboard which motherboard to get the config
+     * \return the dictionary representing the sync source settings
+     */
+    virtual std::vector<device_addr_t> get_sync_sources(const size_t mboard) = 0;
 
     /*!
      * Send the clock source to an output connector.

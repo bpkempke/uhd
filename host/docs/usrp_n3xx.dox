@@ -553,6 +553,48 @@ salt-minion):
 
     $ systemctl enable salt-minion
 
+To make use of Salt, both the device needs to be configured (the "minion") and,
+typically, a server to act as the Salt master. Refer to the Salt documentation
+on how to configure the minion and the master. A typical sequence to get started
+will look like this:
+
+1. Install the salt-master package on the server (e.g. by running `apt install salt-master`
+   if the server is an Ubuntu system), and make sure the Salt master is running.
+2. Add the network address / hostname of that server to the `/etc/salt/minion`
+   file on the device by editing the `master:` line.
+3. Launch the Salt minion on the USRP by running the command `systemctl start salt-minion`.
+4. The minion will try to connect to the master. You need to authorize the
+   minion by running `salt-key -a $hostname` where `$hostname` is the name of
+   the minion.
+5. Once the device is authorized, you can try various commands to see if the
+   communication was established:
+
+    $ [sudo] salt '*' test.ping
+    ni-n3xx-311FE00:
+        True
+    $ [sudo] salt '*' network.interfaces
+    ni-n3xx-311FE00:
+        ----------
+        eth0:
+            ----------
+            hwaddr:
+                02:00:03:11:fe:00
+            inet:
+                |_
+                  ----------
+                  address:
+                      10.16.32.113
+                  broadcast:
+                      10.16.33.255
+                  label:
+                      eth0
+                  netmask:
+                      255.255.254.0
+            up:
+                True
+    # [...]
+
+
 \section n3xx_synchronization Clock/Time Synchronization
 
 \subsection n3xx_synchronization_internal Internal references
@@ -567,13 +609,15 @@ Using an internal reference is the default.
 \subsection n3xx_synchronization_external External references
 
 In order to synchronize multiple USRPs, an external reference, such as the
-CDA-2990, is required. If only a clock reference is available, it is possible
-to derive an internal PPS signal from the reference (which will allow devices
-to share a frequency, but not a time reference). If both an external clock and
-time source are provided, devices will be synchronized in frequency and time.
+CDA-2990 (OctoClock), is required. If only a clock reference is available, it is
+possible to derive an internal PPS signal from the reference (which will allow
+devices to share a frequency, but not a time reference). If both an external
+clock and time source are provided, devices will be synchronized in frequency
+and time.
 
 ```cpp
-auto usrp = uhd::usrp::multi_usrp::make("type=n3xx,clock_source=external,time_source=external");
+auto usrp = uhd::usrp::multi_usrp::make(
+    "type=n3xx,clock_source=external,time_source=external");
 ```
 
 \subsection n3xx_synchronization_whiterabbit White Rabbit
@@ -584,7 +628,7 @@ configured as a White Rabbit slave.
 
 To use White Rabbit, it is necessary to provide an appropriate reference via
 Ethernet. This reference must be connected to SFP0. Finally, a White Rabbit-compatible
-FPGA must be loaded. SFP0 will not be available for data transport in this mode.
+FPGA must be loaded. SFP0 will *not be available for data transport* in this mode.
 
 The White Rabbit image is provided as a default image. To obtain the default
 images, simply run:
@@ -593,13 +637,24 @@ images, simply run:
 
 Then, you can install the WX (or WA) image using `uhd_image_loader`:
 
-    $ uhd_image_loader --args type=n3xx,addr=ni-n3xx-<DEVICE_SERIAL> --fpga-path=”<UHD_INSTALL_DIRECTORY>/share/uhd/images/usrp_n310_fpga_WX.bit
+    $ uhd_image_loader \
+        --args type=n3xx,addr=ni-n3xx-<DEVICE_SERIAL>,WX
 
 Once the image is loaded, select `internal` as the clock source and
-`sfp0` as the time source:
+`sfp0` as the time source (note: this will fail if the WX or WA image is not
+currently loaded):
 
 ```cpp
-auto usrp = uhd::usrp::multi_usrp::make("type=n3xx,clock_source=internal,time_source=sfp0");
+auto usrp = uhd::usrp::multi_usrp::make(
+    "type=n3xx,clock_source=internal,time_source=sfp0");
+// Or if you want to change it to White Rabbit after initialization:
+usrp->set_sync_source(device_addr_t("clock_source=internal,time_source=sfp0"));
+// Using the older time/clock source APIs is also possible:
+usrp->set_time_source("sfp0");
+usrp->set_clock_source("internal");
+// The 2nd call can technically be skipped because the device implementations
+// will coerce, but for consistency with other code and for being explicit this
+// is the preferred way. The 2nd call will immediately return in this case.
 ```
 
 For more information, refer to the [White Rabbit Homepage](https://www.ohwr.org/projects/white-rabbit),

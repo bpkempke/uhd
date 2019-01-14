@@ -27,10 +27,7 @@
 
 #include <boost/algorithm/string.hpp>
 #include <boost/asio.hpp>
-#include <boost/bind.hpp>
 #include <boost/make_shared.hpp>
-#include <boost/functional/hash.hpp>
-#include <boost/assign/list_of.hpp>
 #include <fstream>
 #include <chrono>
 #include <thread>
@@ -44,6 +41,10 @@ using namespace uhd::usrp::gpio_atr;
 using namespace uhd::usrp::x300;
 namespace asio = boost::asio;
 
+
+/******************************************************************************
+ * Helpers
+ *****************************************************************************/
 static std::string get_fpga_option(wb_iface::sptr zpu_ctrl) {
     //Possible options:
     //1G  = {0:1G, 1:1G} w/ DRAM, HG  = {0:1G, 1:10G} w/ DRAM, XG  = {0:10G, 1:10G} w/ DRAM
@@ -68,6 +69,82 @@ static std::string get_fpga_option(wb_iface::sptr zpu_ctrl) {
     }
     return option;
 }
+
+
+namespace {
+
+    /*! Return the correct motherboard type for a given product ID
+     *
+     * Note: In previous versions, we had two different mappings for PCIe and
+     * Ethernet in case the PIDs would conflict, but they never did and it was
+     * thus consolidated into one.
+     */
+    x300_impl::x300_mboard_t map_pid_to_mb_type(const uint32_t pid)
+    {
+        switch (pid) {
+            case X300_USRP_PCIE_SSID_ADC_33:
+            case X300_USRP_PCIE_SSID_ADC_18:
+                return x300_impl::USRP_X300_MB;
+            case X310_USRP_PCIE_SSID_ADC_33:
+            case X310_2940R_40MHz_PCIE_SSID_ADC_33:
+            case X310_2940R_120MHz_PCIE_SSID_ADC_33:
+            case X310_2942R_40MHz_PCIE_SSID_ADC_33:
+            case X310_2942R_120MHz_PCIE_SSID_ADC_33:
+            case X310_2943R_40MHz_PCIE_SSID_ADC_33:
+            case X310_2943R_120MHz_PCIE_SSID_ADC_33:
+            case X310_2944R_40MHz_PCIE_SSID_ADC_33:
+            case X310_2950R_40MHz_PCIE_SSID_ADC_33:
+            case X310_2950R_120MHz_PCIE_SSID_ADC_33:
+            case X310_2952R_40MHz_PCIE_SSID_ADC_33:
+            case X310_2952R_120MHz_PCIE_SSID_ADC_33:
+            case X310_2953R_40MHz_PCIE_SSID_ADC_33:
+            case X310_2953R_120MHz_PCIE_SSID_ADC_33:
+            case X310_2954R_40MHz_PCIE_SSID_ADC_33:
+            case X310_USRP_PCIE_SSID_ADC_18:
+            case X310_2940R_40MHz_PCIE_SSID_ADC_18:
+            case X310_2940R_120MHz_PCIE_SSID_ADC_18:
+            case X310_2942R_40MHz_PCIE_SSID_ADC_18:
+            case X310_2942R_120MHz_PCIE_SSID_ADC_18:
+            case X310_2943R_40MHz_PCIE_SSID_ADC_18:
+            case X310_2943R_120MHz_PCIE_SSID_ADC_18:
+            case X310_2944R_40MHz_PCIE_SSID_ADC_18:
+            case X310_2945R_PCIE_SSID_ADC_18:
+            case X310_2950R_40MHz_PCIE_SSID_ADC_18:
+            case X310_2950R_120MHz_PCIE_SSID_ADC_18:
+            case X310_2952R_40MHz_PCIE_SSID_ADC_18:
+            case X310_2952R_120MHz_PCIE_SSID_ADC_18:
+            case X310_2953R_40MHz_PCIE_SSID_ADC_18:
+            case X310_2953R_120MHz_PCIE_SSID_ADC_18:
+            case X310_2954R_40MHz_PCIE_SSID_ADC_18:
+            case X310_2955R_PCIE_SSID_ADC_18:
+                return x300_impl::USRP_X310_MB;
+            case X310_2974_PCIE_SSID_ADC_18:
+                return x300_impl::USRP_X310_MB_NI_2974;
+            default:
+                return x300_impl::UNKNOWN;
+        }
+        UHD_THROW_INVALID_CODE_PATH();
+    }
+
+    /*! Map the motherboard type to a product name
+     */
+    std::string map_mb_type_to_product_name(
+            const x300_impl::x300_mboard_t mb_type,
+            const std::string& default_name="")
+    {
+        switch (mb_type) {
+            case x300_impl::USRP_X300_MB:
+                return "X300";
+            case x300_impl::USRP_X310_MB:
+                return "X310";
+            case x300_impl::USRP_X310_MB_NI_2974:
+                return "NI-2974";
+            default:
+                return default_name;
+        }
+    }
+
+} /* namespace anon */
 
 /***********************************************************************
  * Discovery over the udp and pcie transport
@@ -124,15 +201,10 @@ static device_addrs_t x300_find_with_addr(const device_addr_t &hint)
             }
             new_addr["name"] = mb_eeprom["name"];
             new_addr["serial"] = mb_eeprom["serial"];
-            switch (x300_impl::get_mb_type_from_eeprom(mb_eeprom)) {
-                case x300_impl::USRP_X300_MB:
-                    new_addr["product"] = "X300";
-                    break;
-                case x300_impl::USRP_X310_MB:
-                    new_addr["product"] = "X310";
-                    break;
-                default:
-                    break;
+            const std::string product_name = map_mb_type_to_product_name(
+                x300_impl::get_mb_type_from_eeprom(mb_eeprom));
+            if (!product_name.empty()) {
+                new_addr["product"] = product_name;
             }
         }
         catch(const std::exception &)
@@ -154,6 +226,7 @@ static device_addrs_t x300_find_with_addr(const device_addr_t &hint)
 
     return addrs;
 }
+
 
 //We need a zpu xport registry to ensure synchronization between the static finder method
 //and the instances of the x300_impl class.
@@ -181,15 +254,12 @@ static device_addrs_t x300_find_pcie(const device_addr_t &hint, bool explicit_qu
         std::string resource_d(dev_info.resource_name);
         boost::to_upper(resource_d);
 
-        switch (x300_impl::get_mb_type_from_pcie(resource_d, rpc_port_name)) {
-            case x300_impl::USRP_X300_MB:
-                new_addr["product"] = "X300";
-                break;
-            case x300_impl::USRP_X310_MB:
-                new_addr["product"] = "X310";
-                break;
-            default:
-                continue;
+        const std::string product_name = map_mb_type_to_product_name(
+            x300_impl::get_mb_type_from_pcie(resource_d, rpc_port_name));
+        if (product_name.empty()) {
+            continue;
+        } else {
+            new_addr["product"] = product_name;
         }
 
         niriok_proxy::sptr kernel_proxy = niriok_proxy::make_and_open(dev_info.interface_path);
@@ -422,10 +492,10 @@ x300_impl::x300_impl(const uhd::device_addr_t &dev_addr)
         boost::thread_group setup_threads;
         for (size_t i = 0; i < init_usrps; i++)
         {
-            size_t index = num_usrps + i;
-            setup_threads.create_thread(
-                boost::bind(&x300_impl::setup_mb, this, index, device_args[index])
-            );
+            const size_t index = num_usrps + i;
+            setup_threads.create_thread([this, index, device_args](){
+                this->setup_mb(index, device_args[index]);
+            });
         }
         setup_threads.join_all();
         num_usrps += init_usrps;
@@ -598,11 +668,12 @@ void x300_impl::setup_mb(const size_t mb_i, const uhd::device_addr_t &dev_addr)
                 lvbitx.reset(new x300_lvbitx(dev_addr["fpga"]));
                 break;
             case USRP_X310_MB:
+            case USRP_X310_MB_NI_2974:
                 lvbitx.reset(new x310_lvbitx(dev_addr["fpga"]));
                 break;
             default:
                 nirio_status_to_exception(status, "Motherboard detection error. Please ensure that you \
-                    have a valid USRP X3x0, NI USRP-294xR or NI USRP-295xR device and that all the device \
+                    have a valid USRP X3x0, NI USRP-294xR, NI USRP-295xR or NI USRP-2974 device and that all the device \
                     drivers have loaded successfully.");
         }
         //Load the lvbitx onto the device
@@ -645,7 +716,9 @@ void x300_impl::setup_mb(const size_t mb_i, const uhd::device_addr_t &dev_addr)
     if (not try_to_claim(mb.zpu_ctrl)) {
         throw uhd::runtime_error("Failed to claim device");
     }
-    mb.claimer_task = uhd::task::make(boost::bind(&x300_impl::claimer_loop, this, mb.zpu_ctrl), "x300_claimer");
+    mb.claimer_task = uhd::task::make([this, mb](){
+        this->claimer_loop(mb.zpu_ctrl);
+    }, "x300_claimer");
 
     //extract the FW path for the X300
     //and live load fw over ethernet link
@@ -720,24 +793,24 @@ void x300_impl::setup_mb(const size_t mb_i, const uhd::device_addr_t &dev_addr)
         UHD_LOGGER_WARNING("X300") << "UHD is operating in EEPROM Recovery Mode which disables hardware version "
                             "checks.\nOperating in this mode may cause hardware damage and unstable "
                             "radio performance!";
+        return;
     }
 
     ////////////////////////////////////////////////////////////////////
     // parse the product number
     ////////////////////////////////////////////////////////////////////
-    std::string product_name = "X300?";
-    switch (get_mb_type_from_eeprom(mb_eeprom)) {
-        case USRP_X300_MB:
-            product_name = "X300";
-            break;
-        case USRP_X310_MB:
-            product_name = "X310";
-            break;
-        default:
-            if (not mb.args.get_recover_mb_eeprom())
-                throw uhd::runtime_error("Unrecognized product type.\n"
-                                         "Either the software does not support this device in which case please update your driver software to the latest version and retry OR\n"
-                                         "The product code in the EEPROM is corrupt and may require reprogramming.");
+    const std::string product_name = map_mb_type_to_product_name(
+        get_mb_type_from_eeprom(mb_eeprom), "X300?");
+    if (product_name == "X300?") {
+        if (not mb.args.get_recover_mb_eeprom()) {
+            throw uhd::runtime_error(
+                "Unrecognized product type.\n"
+                "Either the software does not support this device in which "
+                "case please update your driver software to the latest version "
+                "and retry OR\n"
+                "The product code in the EEPROM is corrupt and may require "
+                "reprogramming.");
+        }
     }
     _tree->create<std::string>(mb_path / "name").set(product_name);
     _tree->create<std::string>(mb_path / "codename").set("Yetti");
@@ -812,9 +885,8 @@ void x300_impl::setup_mb(const size_t mb_i, const uhd::device_addr_t &dev_addr)
                 << boost::format("You requested a receive frame size of (%lu) but your NIC's max frame size is (%lu).")
                 % req_max_frame_size.recv_frame_size
                 % _max_frame_sizes.recv_frame_size
-                
                 << boost::format("Please verify your NIC's MTU setting using '%s' or set the recv_frame_size argument appropriately.")
-                % mtu_tool 
+                % mtu_tool
                 << "UHD will use the auto-detected max frame size for this connection."
                 ;
         }
@@ -825,9 +897,8 @@ void x300_impl::setup_mb(const size_t mb_i, const uhd::device_addr_t &dev_addr)
                 << boost::format("You requested a send frame size of (%lu) but your NIC's max frame size is (%lu).")
                 % req_max_frame_size.send_frame_size
                 % _max_frame_sizes.send_frame_size
-                
                 << boost::format("Please verify your NIC's MTU setting using '%s' or set the send_frame_size argument appropriately.")
-                % mtu_tool 
+                % mtu_tool
                 << "UHD will use the auto-detected max frame size for this connection."
                 ;
         }
@@ -871,18 +942,15 @@ void x300_impl::setup_mb(const size_t mb_i, const uhd::device_addr_t &dev_addr)
     ////////////////////////////////////////////////////////////////////
     // read hardware revision and compatibility number
     ////////////////////////////////////////////////////////////////////
-    const bool recover_mb_eeprom = mb.args.get_recover_mb_eeprom();
     mb.hw_rev = 0;
     if(mb_eeprom.has_key("revision") and not mb_eeprom["revision"].empty()) {
         try {
             mb.hw_rev = boost::lexical_cast<size_t>(mb_eeprom["revision"]);
         } catch(...) {
-            if (not recover_mb_eeprom)
-                throw uhd::runtime_error("Revision in EEPROM is invalid! Please reprogram your EEPROM.");
+            throw uhd::runtime_error("Revision in EEPROM is invalid! Please reprogram your EEPROM.");
         }
     } else {
-        if (not recover_mb_eeprom)
-            throw uhd::runtime_error("No revision detected. MB EEPROM must be reprogrammed!");
+        throw uhd::runtime_error("No revision detected. MB EEPROM must be reprogrammed!");
     }
 
     size_t hw_rev_compat = 0;
@@ -891,12 +959,10 @@ void x300_impl::setup_mb(const size_t mb_i, const uhd::device_addr_t &dev_addr)
             try {
                 hw_rev_compat = boost::lexical_cast<size_t>(mb_eeprom["revision_compat"]);
             } catch(...) {
-                if (not recover_mb_eeprom)
-                    throw uhd::runtime_error("Revision compat in EEPROM is invalid! Please reprogram your EEPROM.");
+                throw uhd::runtime_error("Revision compat in EEPROM is invalid! Please reprogram your EEPROM.");
             }
         } else {
-            if (not recover_mb_eeprom)
-                throw uhd::runtime_error("No revision compat detected. MB EEPROM must be reprogrammed!");
+            throw uhd::runtime_error("No revision compat detected. MB EEPROM must be reprogrammed!");
         }
     } else {
         //For older HW just assume that revision_compat = revision
@@ -904,15 +970,13 @@ void x300_impl::setup_mb(const size_t mb_i, const uhd::device_addr_t &dev_addr)
     }
 
     if (hw_rev_compat > X300_REVISION_COMPAT) {
-        if (not recover_mb_eeprom)
-            throw uhd::runtime_error(str(boost::format(
-                "Hardware is too new for this software. Please upgrade to a driver that supports hardware revision %d.")
-                % mb.hw_rev));
+        throw uhd::runtime_error(str(boost::format(
+            "Hardware is too new for this software. Please upgrade to a driver that supports hardware revision %d.")
+            % mb.hw_rev));
     } else if (mb.hw_rev < X300_REVISION_MIN) { //Compare min against the revision (and not compat) to give us more leeway for partial support for a compat
-        if (not recover_mb_eeprom)
-            throw uhd::runtime_error(str(boost::format(
-                "Software is too new for this hardware. Please downgrade to a driver that supports hardware revision %d.")
-                % mb.hw_rev));
+        throw uhd::runtime_error(str(boost::format(
+            "Software is too new for this hardware. Please downgrade to a driver that supports hardware revision %d.")
+            % mb.hw_rev));
     }
 
     ////////////////////////////////////////////////////////////////////
@@ -942,7 +1006,7 @@ void x300_impl::setup_mb(const size_t mb_i, const uhd::device_addr_t &dev_addr)
     // create clock properties
     ////////////////////////////////////////////////////////////////////
     _tree->create<double>(mb_path / "master_clock_rate")
-        .set_publisher(boost::bind(&x300_clock_ctrl::get_master_clock_rate, mb.clock))
+        .set_publisher([mb](){ return mb.clock->get_master_clock_rate(); })
     ;
 
     UHD_LOGGER_INFO("X300")
@@ -969,7 +1033,10 @@ void x300_impl::setup_mb(const size_t mb_i, const uhd::device_addr_t &dev_addr)
         if (mb.gps and mb.gps->gps_detected()) {
             for(const std::string& name : mb.gps->get_sensors()) {
                 _tree->create<sensor_value_t>(mb_path / "sensors" / name)
-                    .set_publisher(boost::bind(&gps_ctrl::get_sensor, mb.gps, name));
+                    .set_publisher([&mb, name](){
+                        return mb.gps->get_sensor(name);
+                    })
+                ;
             }
         }
         else {
@@ -1056,7 +1123,7 @@ void x300_impl::setup_mb(const size_t mb_i, const uhd::device_addr_t &dev_addr)
     // and do the misc mboard sensors
     ////////////////////////////////////////////////////////////////////
     _tree->create<sensor_value_t>(mb_path / "sensors" / "ref_locked")
-        .set_publisher(boost::bind(&x300_impl::get_ref_locked, this, mb));
+        .set_publisher([this, &mb](){ return this->get_ref_locked(mb); });
 
     //////////////// RFNOC /////////////////
     const size_t n_rfnoc_blocks = mb.zpu_ctrl->peek32(SR_ADDR(SET0_BASE, ZPU_RB_NUM_CE));
@@ -1097,7 +1164,9 @@ void x300_impl::setup_mb(const size_t mb_i, const uhd::device_addr_t &dev_addr)
         if (mb.args.get_self_cal_adc_delay()) {
             rfnoc::x300_radio_ctrl_impl::self_cal_adc_xfer_delay(
                 mb.radios, mb.clock,
-                boost::bind(&x300_impl::wait_for_clk_locked, this, mb, fw_regmap_t::clk_status_reg_t::LMK_LOCK, _1),
+                [this, &mb](const double timeout){
+                    return this->wait_for_clk_locked(mb, fw_regmap_t::clk_status_reg_t::LMK_LOCK, timeout);
+                },
                 true /* Apply ADC delay */);
         }
         if (mb.args.get_ext_adc_self_test()) {
@@ -1105,7 +1174,7 @@ void x300_impl::setup_mb(const size_t mb_i, const uhd::device_addr_t &dev_addr)
                 mb.radios,
                 mb.args.get_ext_adc_self_test_duration()
             );
-        } else if (not recover_mb_eeprom){
+        } else {
             for (size_t i = 0; i < mb.radios.size(); i++) {
                 mb.radios.at(i)->self_test_adc();
             }
@@ -1292,7 +1361,13 @@ uhd::both_xports_t x300_impl::make_transport(
             next_src_addr==0 ? x300::SRC_ADDR0 : x300::SRC_ADDR1;
         const uint32_t xbar_src_dst =
             conn.type==X300_IFACE_ETH0 ? x300::XB_DST_E0 : x300::XB_DST_E1;
-        if (xport_type != TX_DATA) next_src_addr = (next_src_addr + 1) % mb.eth_conns.size();
+
+        // Do not increment src addr for tx_data by default, using dual ethernet
+        // with the DMA FIFO causes sequence errors to DMA FIFO bandwidth
+        // limitations.
+        if (xport_type != TX_DATA || mb.args.get_enable_tx_dual_eth()) {
+            next_src_addr = (next_src_addr + 1) % mb.eth_conns.size();
+        }
 
         xports.send_sid = this->allocate_sid(mb, address, xbar_src_addr, xbar_src_dst);
         xports.recv_sid = xports.send_sid.reversed();
@@ -1304,7 +1379,7 @@ uhd::both_xports_t x300_impl::make_transport(
         default_buff_args.recv_frame_size = std::min(system_max_recv_frame_size, x300::ETH_MSG_FRAME_SIZE);
         default_buff_args.send_buff_size = conn.link_rate / 50; // 20ms
         default_buff_args.recv_buff_size = std::max(conn.link_rate / 50, x300::ETH_MSG_NUM_FRAMES * x300::ETH_MSG_FRAME_SIZE); // enough to hold greater of 20ms or number of msg frames
-        if (xport_type == TX_DATA) 
+        if (xport_type == TX_DATA)
         {
             size_t default_frame_size = conn.link_rate == x300::MAX_RATE_1GIGE ? x300::GE_DATA_FRAME_SEND_SIZE : x300::XGE_DATA_FRAME_SEND_SIZE;
             default_buff_args.send_frame_size = args.cast<size_t>("send_frame_size", std::min(default_frame_size, system_max_send_frame_size));
@@ -1319,7 +1394,7 @@ uhd::both_xports_t x300_impl::make_transport(
                 default_buff_args.send_frame_size = system_max_send_frame_size;
             }
         }
-        else if (xport_type == RX_DATA) 
+        else if (xport_type == RX_DATA)
         {
             size_t default_frame_size = conn.link_rate == x300::MAX_RATE_1GIGE ? x300::GE_DATA_FRAME_RECV_SIZE : x300::XGE_DATA_FRAME_RECV_SIZE;
             default_buff_args.recv_frame_size = args.cast<size_t>("recv_frame_size", std::min(default_frame_size, system_max_recv_frame_size));
@@ -1819,69 +1894,31 @@ void x300_impl::check_fpga_compat(const fs_path &mb_path, const mboard_members_t
         << " git hash: " << git_hash_str);
 }
 
-x300_impl::x300_mboard_t x300_impl::get_mb_type_from_pcie(const std::string& resource, const std::string& rpc_port)
+x300_impl::x300_mboard_t x300_impl::get_mb_type_from_pcie(
+        const std::string& resource, const std::string& rpc_port)
 {
-    x300_mboard_t mb_type = UNKNOWN;
-
     //Detect the PCIe product ID to distinguish between X300 and X310
     nirio_status status = NiRio_Status_Success;
     uint32_t pid;
     niriok_proxy::sptr discovery_proxy =
         niusrprio_session::create_kernel_proxy(resource, rpc_port);
     if (discovery_proxy) {
-        nirio_status_chain(discovery_proxy->get_attribute(RIO_PRODUCT_NUMBER, pid), status);
+        nirio_status_chain(
+            discovery_proxy->get_attribute(RIO_PRODUCT_NUMBER, pid), status);
         discovery_proxy->close();
         if (nirio_status_not_fatal(status)) {
-            //The PCIe ID -> MB mapping may be different from the EEPROM -> MB mapping
-            switch (pid) {
-                case X300_USRP_PCIE_SSID_ADC_33:
-                case X300_USRP_PCIE_SSID_ADC_18:
-                    mb_type = USRP_X300_MB; break;
-                case X310_USRP_PCIE_SSID_ADC_33:
-                case X310_2940R_40MHz_PCIE_SSID_ADC_33:
-                case X310_2940R_120MHz_PCIE_SSID_ADC_33:
-                case X310_2942R_40MHz_PCIE_SSID_ADC_33:
-                case X310_2942R_120MHz_PCIE_SSID_ADC_33:
-                case X310_2943R_40MHz_PCIE_SSID_ADC_33:
-                case X310_2943R_120MHz_PCIE_SSID_ADC_33:
-                case X310_2944R_40MHz_PCIE_SSID_ADC_33:
-                case X310_2950R_40MHz_PCIE_SSID_ADC_33:
-                case X310_2950R_120MHz_PCIE_SSID_ADC_33:
-                case X310_2952R_40MHz_PCIE_SSID_ADC_33:
-                case X310_2952R_120MHz_PCIE_SSID_ADC_33:
-                case X310_2953R_40MHz_PCIE_SSID_ADC_33:
-                case X310_2953R_120MHz_PCIE_SSID_ADC_33:
-                case X310_2954R_40MHz_PCIE_SSID_ADC_33:
-                case X310_USRP_PCIE_SSID_ADC_18:
-                case X310_2940R_40MHz_PCIE_SSID_ADC_18:
-                case X310_2940R_120MHz_PCIE_SSID_ADC_18:
-                case X310_2942R_40MHz_PCIE_SSID_ADC_18:
-                case X310_2942R_120MHz_PCIE_SSID_ADC_18:
-                case X310_2943R_40MHz_PCIE_SSID_ADC_18:
-                case X310_2943R_120MHz_PCIE_SSID_ADC_18:
-                case X310_2944R_40MHz_PCIE_SSID_ADC_18:
-                case X310_2945R_PCIE_SSID_ADC_18:
-                case X310_2950R_40MHz_PCIE_SSID_ADC_18:
-                case X310_2950R_120MHz_PCIE_SSID_ADC_18:
-                case X310_2952R_40MHz_PCIE_SSID_ADC_18:
-                case X310_2952R_120MHz_PCIE_SSID_ADC_18:
-                case X310_2953R_40MHz_PCIE_SSID_ADC_18:
-                case X310_2953R_120MHz_PCIE_SSID_ADC_18:
-                case X310_2954R_40MHz_PCIE_SSID_ADC_18:
-                case X310_2955R_PCIE_SSID_ADC_18:
-                    mb_type = USRP_X310_MB; break;
-                default:
-                    mb_type = UNKNOWN;      break;
-            }
+            return map_pid_to_mb_type(pid);
         }
     }
 
-    return mb_type;
+    UHD_LOGGER_WARNING("X300") <<
+        "NI-RIO Error -- unable to determine motherboard type!";
+    return UNKNOWN;
 }
 
-x300_impl::x300_mboard_t x300_impl::get_mb_type_from_eeprom(const uhd::usrp::mboard_eeprom_t& mb_eeprom)
+x300_impl::x300_mboard_t x300_impl::get_mb_type_from_eeprom(
+        const uhd::usrp::mboard_eeprom_t& mb_eeprom)
 {
-    x300_mboard_t mb_type = UNKNOWN;
     if (not mb_eeprom["product"].empty())
     {
         uint16_t product_num = 0;
@@ -1891,48 +1928,9 @@ x300_impl::x300_mboard_t x300_impl::get_mb_type_from_eeprom(const uhd::usrp::mbo
             product_num = 0;
         }
 
-        switch (product_num) {
-            //The PCIe ID -> MB mapping may be different from the EEPROM -> MB mapping
-            case X300_USRP_PCIE_SSID_ADC_33:
-            case X300_USRP_PCIE_SSID_ADC_18:
-                mb_type = USRP_X300_MB; break;
-            case X310_USRP_PCIE_SSID_ADC_33:
-            case X310_2940R_40MHz_PCIE_SSID_ADC_33:
-            case X310_2940R_120MHz_PCIE_SSID_ADC_33:
-            case X310_2942R_40MHz_PCIE_SSID_ADC_33:
-            case X310_2942R_120MHz_PCIE_SSID_ADC_33:
-            case X310_2943R_40MHz_PCIE_SSID_ADC_33:
-            case X310_2943R_120MHz_PCIE_SSID_ADC_33:
-            case X310_2944R_40MHz_PCIE_SSID_ADC_33:
-            case X310_2950R_40MHz_PCIE_SSID_ADC_33:
-            case X310_2950R_120MHz_PCIE_SSID_ADC_33:
-            case X310_2952R_40MHz_PCIE_SSID_ADC_33:
-            case X310_2952R_120MHz_PCIE_SSID_ADC_33:
-            case X310_2953R_40MHz_PCIE_SSID_ADC_33:
-            case X310_2953R_120MHz_PCIE_SSID_ADC_33:
-            case X310_2954R_40MHz_PCIE_SSID_ADC_33:
-            case X310_USRP_PCIE_SSID_ADC_18:
-            case X310_2940R_40MHz_PCIE_SSID_ADC_18:
-            case X310_2940R_120MHz_PCIE_SSID_ADC_18:
-            case X310_2942R_40MHz_PCIE_SSID_ADC_18:
-            case X310_2942R_120MHz_PCIE_SSID_ADC_18:
-            case X310_2943R_40MHz_PCIE_SSID_ADC_18:
-            case X310_2943R_120MHz_PCIE_SSID_ADC_18:
-            case X310_2944R_40MHz_PCIE_SSID_ADC_18:
-            case X310_2945R_PCIE_SSID_ADC_18:
-            case X310_2950R_40MHz_PCIE_SSID_ADC_18:
-            case X310_2950R_120MHz_PCIE_SSID_ADC_18:
-            case X310_2952R_40MHz_PCIE_SSID_ADC_18:
-            case X310_2952R_120MHz_PCIE_SSID_ADC_18:
-            case X310_2953R_40MHz_PCIE_SSID_ADC_18:
-            case X310_2953R_120MHz_PCIE_SSID_ADC_18:
-            case X310_2954R_40MHz_PCIE_SSID_ADC_18:
-            case X310_2955R_PCIE_SSID_ADC_18:
-                mb_type = USRP_X310_MB; break;
-            default:
-                UHD_LOGGER_WARNING("X300") << "X300 unknown product code in EEPROM: " << product_num ;
-                mb_type = UNKNOWN;      break;
-        }
+        return map_pid_to_mb_type(product_num);
     }
-    return mb_type;
+
+    UHD_LOGGER_WARNING("X300") << "Unable to read product ID from EEPROM!";
+    return UNKNOWN;
 }

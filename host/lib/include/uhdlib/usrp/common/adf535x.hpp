@@ -25,9 +25,10 @@ class adf535x_iface
 public:
     typedef std::shared_ptr<adf535x_iface> sptr;
     typedef std::function<void(std::vector<uint32_t>)> write_fn_t;
+    typedef std::function<void(uint32_t)> wait_fn_t;
 
-    static sptr make_adf5355(write_fn_t write);
-    static sptr make_adf5356(write_fn_t write);
+    static sptr make_adf5355(write_fn_t write, wait_fn_t wait);
+    static sptr make_adf5356(write_fn_t write, wait_fn_t wait);
 
     virtual ~adf535x_iface() = default;
 
@@ -82,14 +83,15 @@ template <typename adf535x_regs_t>
 class adf535x_impl : public adf535x_iface
 {
 public:
-  explicit adf535x_impl(write_fn_t write_fn) :
+  explicit adf535x_impl(write_fn_t write_fn, wait_fn_t wait_fn) :
           _write_fn(std::move(write_fn)),
+          _wait_fn(std::move(wait_fn)),
           _regs(),
           _rewrite_regs(true),
           _wait_time_us(0),
           _ref_freq(0.0),
           _pfd_freq(0.0),
-          _fb_after_divider(false)
+          _fb_after_divider(true)
   {
 
     _regs.vco_band_div = 3;
@@ -101,14 +103,10 @@ public:
     _regs.adc_conversion = adf535x_regs_t::ADC_CONVERSION_ENABLED;
     _regs.adc_enable = adf535x_regs_t::ADC_ENABLE_ENABLED;
 
-    // TODO Needs to be enabled for phase resync
+    // Start with phase resync disabled and enable when reference clock is set
     _regs.phase_resync = adf535x_regs_t::PHASE_RESYNC_DISABLED;
 
-    // TODO Default should be divided, but there seems to be a bug preventing that. Needs rechecking
-    _regs.feedback_select = adf535x_regs_t::FEEDBACK_SELECT_FUNDAMENTAL;
-
-    // TODO 0 is an invalid value for this field. Setting to 1 seemed to break phase sync, needs retesting.
-    _regs.phase_resync_clk_div = 0;
+    set_feedback_select(FB_SEL_DIVIDED);
   }
 
   ~adf535x_impl() override
@@ -161,7 +159,7 @@ public:
     }
 
     //Reference divide-by-2 for 50% duty cycle
-    // if R even, move one divide by 2 to to regs.reference_divide_by_2
+    // if R even, move one divide by 2 to regs.reference_divide_by_2
     const bool div2_en = (ref_div_factor % 2 == 0);
     if (div2_en) {
       ref_div_factor /= 2;
@@ -203,8 +201,7 @@ public:
 
     //-----------------------------------------------------------
     //Phase resync
-    // TODO Renable here, in initialization, or through separate set_phase_resync(bool enable) function
-    _regs.phase_resync = adf535x_regs_t::PHASE_RESYNC_DISABLED;
+    _regs.phase_resync = adf535x_regs_t::PHASE_RESYNC_ENABLED;
 
     _regs.phase_adjust = adf535x_regs_t::PHASE_ADJUST_DISABLED;
     _regs.sd_load_reset = adf535x_regs_t::SD_LOAD_RESET_ON_REG0_UPDATE;
@@ -272,6 +269,7 @@ private: //Members
   typedef std::vector<uint32_t> addr_vtr_t;
 
   write_fn_t      _write_fn;
+  wait_fn_t       _wait_fn;
   adf535x_regs_t  _regs;
   bool            _rewrite_regs;
   uint32_t        _wait_time_us;
@@ -326,13 +324,10 @@ inline double adf535x_impl<adf5355_regs_t>::_set_frequency(double target_freq, d
   const auto MOD2 = static_cast<uint16_t>(std::min(floor(_pfd_freq / gcd), static_cast<double>(ADF535X_MAX_MOD2)));
   const auto FRAC2 = static_cast<uint16_t>(std::min(ceil(residue * MOD2), static_cast<double>(ADF535X_MAX_FRAC2)));
 
-  const double coerced_vco_freq = _pfd_freq * (
-    double(INT) + (
-      (double(FRAC1) +
-      (double(FRAC2) / double(MOD2)))
-      / double(ADF535X_MOD1)
-    )
-  );
+  const double coerced_vco_freq = _pfd_freq *
+    (_fb_after_divider ? rf_divider : 1) *
+    (double(INT) + ((double(FRAC1) + (double(FRAC2) / double(MOD2))) /
+    double(ADF535X_MOD1)));
 
   const double coerced_out_freq = coerced_vco_freq / rf_divider;
 
@@ -359,10 +354,9 @@ inline void adf535x_impl<adf5355_regs_t>::_commit()
       regs.push_back(_regs.get_reg(addr));
     }
     _write_fn(regs);
-    // TODO Add FPGA based delay between these writes
+    _wait_fn(_wait_time_us);
     _write_fn(addr_vtr_t(ONE_REG, _regs.get_reg(0)));
     _rewrite_regs = false;
-
   } else {
     //Frequency update sequence from data sheet
     _write_fn(addr_vtr_t(ONE_REG, _regs.get_reg(6)));
@@ -374,7 +368,6 @@ inline void adf535x_impl<adf5355_regs_t>::_commit()
     _write_fn(addr_vtr_t(ONE_REG, _regs.get_reg(0)));
     _regs.counter_reset = adf5355_regs_t::COUNTER_RESET_DISABLED;
     _write_fn(addr_vtr_t(ONE_REG, _regs.get_reg(4)));
-    // TODO Add FPGA based delay between these writes
     _regs.autocal_en = adf5355_regs_t::AUTOCAL_EN_ENABLED;
     _write_fn(addr_vtr_t(ONE_REG, _regs.get_reg(0)));
   }
@@ -424,15 +417,12 @@ inline double adf535x_impl<adf5356_regs_t>::_set_frequency(double target_freq, d
 
   const double gcd = boost::math::gcd(static_cast<int>(_pfd_freq), static_cast<int>(freq_resolution));
   const auto MOD2 = static_cast<uint16_t>(std::min(floor(_pfd_freq / gcd), static_cast<double>(ADF535X_MAX_MOD2)));
-  const auto FRAC2 = static_cast<uint16_t>(std::min(ceil(residue * MOD2), static_cast<double>(ADF535X_MAX_FRAC2)));
+  const auto FRAC2 = static_cast<uint16_t>(std::min(round(residue * MOD2), static_cast<double>(ADF535X_MAX_FRAC2)));
 
-  const double coerced_vco_freq = _pfd_freq * (
-    double(INT) + (
-      (double(FRAC1) +
-      (double(FRAC2) / double(MOD2)))
-      / double(ADF535X_MOD1)
-    )
-  );
+  const double coerced_vco_freq = _pfd_freq *
+    (_fb_after_divider ? rf_divider : 1) *
+    (double(INT) + ((double(FRAC1) + (double(FRAC2) / double(MOD2)))
+    / double(ADF535X_MOD1)));
 
   const double coerced_out_freq = coerced_vco_freq / rf_divider;
 
@@ -458,18 +448,15 @@ inline void adf535x_impl<adf5356_regs_t>::_commit()
       regs.push_back(_regs.get_reg(addr));
     }
     _write_fn(regs);
-    // TODO Add FPGA based delay between these writes
+    _wait_fn(_wait_time_us);
     _write_fn(addr_vtr_t(ONE_REG, _regs.get_reg(0)));
     _rewrite_regs = false;
-
   } else {
     //Frequency update sequence from data sheet
     _write_fn(addr_vtr_t(ONE_REG, _regs.get_reg(13)));
-    _write_fn(addr_vtr_t(ONE_REG, _regs.get_reg(10)));
     _write_fn(addr_vtr_t(ONE_REG, _regs.get_reg(6)));
     _write_fn(addr_vtr_t(ONE_REG, _regs.get_reg(2)));
     _write_fn(addr_vtr_t(ONE_REG, _regs.get_reg(1)));
-    // TODO Add FPGA based delay between these writes
     _write_fn(addr_vtr_t(ONE_REG, _regs.get_reg(0)));
   }
 }

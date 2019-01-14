@@ -8,8 +8,11 @@ N3xx peripherals
 """
 
 import datetime
+from usrp_mpm import lib
 from usrp_mpm.sys_utils.sysfs_gpio import SysFSGPIO, GPIOBank
 from usrp_mpm.sys_utils.uio import UIO
+from usrp_mpm.sys_utils import i2c_dev
+from usrp_mpm.chips.ds125df410 import DS125DF410
 
 # Map register values to SFP transport types
 N3XX_SFP_TYPES = {
@@ -99,7 +102,7 @@ class TCA6424(object):
             self.pins = self.pins_list[1]
 
         default_val = 0x860101 if rev == 2 else 0x860780
-        self._gpios = SysFSGPIO('tca6424', 0xFFF7FF, 0x86F7FF, default_val)
+        self._gpios = SysFSGPIO({'label': 'tca6424', 'device/of_node/name': 'gpio'}, 0xFFF7FF, 0x86F7FF, default_val)
 
     def set(self, name, value=None):
         """
@@ -132,7 +135,7 @@ class FrontpanelGPIO(GPIOBank):
     def __init__(self, ddr):
         GPIOBank.__init__(
             self,
-            'zynq_gpio',
+            {'label': 'zynq_gpio'},
             self.FP_GPIO_OFFSET + self.EMIO_BASE,
             0xFFF, # use_mask
             ddr
@@ -151,7 +154,7 @@ class BackpanelGPIO(GPIOBank):
     def __init__(self):
         GPIOBank.__init__(
             self,
-            'zynq_gpio',
+            {'label': 'zynq_gpio'},
             self.BP_GPIO_OFFSET + self.EMIO_BASE,
             0x7, # use_mask
             0x7, # ddr
@@ -417,3 +420,17 @@ class MboardRegsControl(object):
         "Get the RFNoC crossbar base port"
         with self.regs:
             return self.peek32(self.MB_XBAR_BASEPORT)
+
+class RetimerQSFP(DS125DF410):
+    # (deemphasis, swing)
+    DRIVER_PRESETS = { '1m': (0x00, 0x07), '3m': (0x41, 0x06), 'Optical': (0x41, 0x04) }
+
+    def __init__(self, i2c_bus):
+        regs_iface = lib.i2c.make_i2cdev_regs_iface(
+            i2c_bus,
+            0x18,
+            False,
+            100,
+            1
+        )
+        super(RetimerQSFP, self).__init__(regs_iface)

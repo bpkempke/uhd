@@ -12,6 +12,7 @@
 \li \subpage page_calibration
 \li \subpage page_mpm
 \li \subpage page_configfiles
+\li \subpage page_compat
 
 ## USRP N-Series Devices
 
@@ -25,6 +26,7 @@
 ## USRP E-Series Devices
 
 \li \subpage page_usrp_e3x0
+\li \subpage page_usrp_e320
 
 ## USRP X-Series Devices
 
@@ -45,6 +47,7 @@ unless stated otherwise, they will still work with this version of UHD.
 ## Daughterboards
 
 \li \subpage page_dboards
+\li \subpage page_twinrx
 
 ## OctoClock
 
