@@ -9,8 +9,6 @@ Rhodium dboard implementation module
 
 from __future__ import print_function
 import os
-import threading
-from six import iterkeys, iteritems
 from usrp_mpm import lib # Pulls in everything from C++-land
 from usrp_mpm.dboard_manager import DboardManagerBase
 from usrp_mpm.dboard_manager.rh_periphs import TCA6408, FPGAtoDbGPIO, FPGAtoLoDist
@@ -163,7 +161,7 @@ class Rhodium(BfrfsEEPROM, DboardManagerBase):
     # Map I2C channel to slot index
     i2c_chan_map = {0: 'i2c-9', 1: 'i2c-10'}
     user_eeprom = {
-        2: { # RevC
+        0: { # dt-compat=0
             'label': "e0004000.i2c",
             'offset': 1024,
             'max_size': 32786 - 1024,
@@ -194,7 +192,7 @@ class Rhodium(BfrfsEEPROM, DboardManagerBase):
         'TX' : 'TX_INSWITCH_CTRL'}
 
     def __init__(self, slot_idx, **kwargs):
-        super(Rhodium, self).__init__(slot_idx, **kwargs)
+        DboardManagerBase.__init__(self, slot_idx, **kwargs)
         self.log = get_logger("Rhodium-{}".format(slot_idx))
         self.log.trace("Initializing Rhodium daughterboard, slot index %d",
                        self.slot_idx)
@@ -257,7 +255,7 @@ class Rhodium(BfrfsEEPROM, DboardManagerBase):
             self._lo_dist = None
         self.log.debug("Turning on Module and RF power supplies")
         self._power_on()
-        BfrfsEEPROM.__init__(self, self.rev, self.user_eeprom)
+        BfrfsEEPROM.__init__(self)
         self._spi_ifaces = _init_spi_devices()
         self.log.debug("Loaded SPI interfaces!")
         self.cpld = RhCPLD(self._spi_ifaces['cpld'], self.log)
@@ -282,27 +280,6 @@ class Rhodium(BfrfsEEPROM, DboardManagerBase):
         self.log.trace("Powering off slot_idx={}...".format(self.slot_idx))
         self._daughterboard_gpio.set(FPGAtoDbGPIO.DB_POWER_ENABLE, 0)
         self._daughterboard_gpio.set(FPGAtoDbGPIO.RF_POWER_ENABLE, 0)
-
-    def _init_user_eeprom(self, eeprom_info):
-        """
-        Reads out user-data EEPROM, and intializes a BufferFS object from that.
-        """
-        self.log.trace("Initializing EEPROM user data...")
-        eeprom_paths = get_eeprom_paths(eeprom_info.get('label'))
-        self.log.trace("Found the following EEPROM paths: `{}'".format(
-            eeprom_paths))
-        eeprom_path = eeprom_paths[self.slot_idx]
-        self.log.trace("Selected EEPROM path: `{}'".format(eeprom_path))
-        user_eeprom_offset = eeprom_info.get('offset', 0)
-        self.log.trace("Selected EEPROM offset: %d", user_eeprom_offset)
-        user_eeprom_data = open(eeprom_path, 'rb').read()[user_eeprom_offset:]
-        self.log.trace("Total EEPROM size is: %d bytes", len(user_eeprom_data))
-        return BufferFS(
-            user_eeprom_data,
-            max_size=eeprom_info.get('max_size'),
-            alignment=eeprom_info.get('alignment', 1024),
-            log=self.log
-        ), eeprom_path
 
     def init(self, args):
         """
@@ -509,14 +486,14 @@ class Rhodium(BfrfsEEPROM, DboardManagerBase):
         Enables or disables the TX lowband LO output from the LMK on the
         daughterboard.
         """
-        self.lmk.enable_tx_lb_lo(enable);
+        self.lmk.enable_tx_lb_lo(enable)
 
     def enable_rx_lowband_lo(self, enable):
         """
         Enables or disables the RX lowband LO output from the LMK on the
         daughterboard.
         """
-        self.lmk.enable_rx_lb_lo(enable);
+        self.lmk.enable_rx_lb_lo(enable)
 
 
     ##########################################################################
@@ -527,7 +504,7 @@ class Rhodium(BfrfsEEPROM, DboardManagerBase):
         """
         Debug for accessing the CPLD via the RPC shell.
         """
-        self.log.trace("CPLD Signature: 0x{:X}".format(self.cpld.peek(0x00)))
+        self.log.trace("CPLD Signature: 0x{:X}".format(self.cpld.peek16(0x00)))
         revision_msb = self.cpld.peek16(0x04)
         self.log.trace("CPLD Revision:  0x{:X}"
                        .format(self.cpld.peek16(0x03) | (revision_msb << 16)))
@@ -591,7 +568,7 @@ class Rhodium(BfrfsEEPROM, DboardManagerBase):
         Debug for reading out all JESD core registers via RPC shell
         """
         with open_uio(
-            label="dboard-regs-{}".format(slot_idx),
+            label="dboard-regs-{}".format(self.slot_idx),
             read_only=False
         ) as radio_regs:
             for i in range(0x2000, 0x2110, 0x10):

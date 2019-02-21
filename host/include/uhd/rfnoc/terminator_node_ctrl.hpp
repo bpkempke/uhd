@@ -10,8 +10,7 @@
 
 #include <uhd/rfnoc/node_ctrl_base.hpp>
 
-namespace uhd {
-    namespace rfnoc {
+namespace uhd { namespace rfnoc {
 
 /*! \brief Abstract class for terminator nodes (i.e. nodes that terminate
  *         the flow graph).
@@ -40,4 +39,3 @@ public:
 }} /* namespace uhd::rfnoc */
 
 #endif /* INCLUDED_LIBUHD_TERMINATOR_NODE_CTRL_BASE_HPP */
-// vim: sw=4 et:

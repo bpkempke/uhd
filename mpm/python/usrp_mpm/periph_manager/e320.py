@@ -128,7 +128,9 @@ class e320(ZynqComponents, PeriphManagerBase):
     # Ctor and device initialization tasks
     ###########################################################################
     def __init__(self, args):
-        super(e320, self).__init__(args)
+        super(e320, self).__init__()
+        self.overlay_apply()
+        self.init_dboards(args)
         if not self._device_initialized:
             # Don't try and figure out what's going on. Just give up.
             return
@@ -283,7 +285,7 @@ class e320(ZynqComponents, PeriphManagerBase):
         self._init_gps_sensors()
         # Init CHDR transports
         self._xport_mgrs = {
-            'udp': E320XportMgrUDP(self.log.getChild('UDP')),
+            'udp': E320XportMgrUDP(self.log.getChild('UDP'), args),
             'liberio': E320XportMgrLiberio(self.log.getChild('liberio')),
         }
         # Spawn status monitoring thread

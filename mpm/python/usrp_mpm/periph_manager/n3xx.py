@@ -56,6 +56,12 @@ class N3xxXportMgrUDP(XportMgrUDP):
     " N3xx-specific UDP configuration "
     xbar_dev = "/dev/crossbar0"
     iface_config = {
+        'bridge0': {
+            'label': 'misc-enet-regs0',
+            'xbar': 0,
+            'xbar_port': 0,
+            'ctrl_src_addr': 0,
+        },
         'sfp0': {
             'label': 'misc-enet-regs0',
             'xbar': 0,
@@ -81,6 +87,7 @@ class N3xxXportMgrUDP(XportMgrUDP):
             'ctrl_src_addr': 1,
         },
     }
+    bridges = {'bridge0': ['sfp0', 'sfp1', 'bridge0']}
 
 class N3xxXportMgrLiberio(XportMgrLiberio):
     " N3xx-specific Liberio configuration "
@@ -212,11 +219,36 @@ class n3xx(ZynqComponents, PeriphManagerBase):
         self._available_endpoints = list(range(256))
         self._bp_leds = None
         self._gpsd = None
-        super(n3xx, self).__init__(args)
-        if not self._device_initialized:
-            # Don't try and figure out what's going on. Just give up.
-            return
+        super(n3xx, self).__init__()
         try:
+            # Init peripherals
+            # these peripherals are specific to mboard and
+            # need to configured before applying fpga overlay
+            self._gpios = TCA6424(int(self.mboard_info['rev']))
+            self.log.trace("Enabling power of MGT156MHZ clk")
+            self._gpios.set("PWREN-CLK-MGT156MHz")
+            self.enable_1g_ref_clock()
+            self.enable_wr_ref_clock()
+            self.enable_gps(
+                enable=str2bool(
+                    args.get('enable_gps', N3XX_DEFAULT_ENABLE_GPS)
+                )
+            )
+            self.enable_fp_gpio(
+                enable=str2bool(
+                    args.get(
+                        'enable_fp_gpio',
+                        N3XX_DEFAULT_ENABLE_FPGPIO
+                    )
+                )
+            )
+            # Apply overlay
+            self.overlay_apply()
+            # Run dboards init
+            self.init_dboards(args)
+            if not self._device_initialized:
+                # Don't try and figure out what's going on. Just give up.
+                return
             self._init_peripherals(args)
         except Exception as ex:
             self.log.error("Failed to initialize motherboard: %s", str(ex))
@@ -310,28 +342,8 @@ class n3xx(ZynqComponents, PeriphManagerBase):
         # Sanity checks
         assert self.device_info.get('product') in self.product_map.values(), \
                 "Device product could not be determined!"
-        # Init peripherals
-        self.log.trace("Initializing TCA6424 port expander controls...")
-        self._gpios = TCA6424(int(self.mboard_info['rev']))
         self.log.trace("Initializing back panel LED controls...")
         self._bp_leds = BackpanelGPIO()
-        self.log.trace("Enabling power of MGT156MHZ clk")
-        self._gpios.set("PWREN-CLK-MGT156MHz")
-        self.enable_1g_ref_clock()
-        self.enable_wr_ref_clock()
-        self.enable_gps(
-            enable=str2bool(
-                args.get('enable_gps', N3XX_DEFAULT_ENABLE_GPS)
-            )
-        )
-        self.enable_fp_gpio(
-            enable=str2bool(
-                args.get(
-                    'enable_fp_gpio',
-                    N3XX_DEFAULT_ENABLE_FPGPIO
-                )
-            )
-        )
         # Init Mboard Regs
         self.mboard_regs_control = MboardRegsControl(
             self.mboard_regs_label, self.log)
@@ -361,7 +373,7 @@ class n3xx(ZynqComponents, PeriphManagerBase):
             self.log.warning("No QSFP board detected!")
         # Init CHDR transports
         self._xport_mgrs = {
-            'udp': N3xxXportMgrUDP(self.log.getChild('UDP')),
+            'udp': N3xxXportMgrUDP(self.log.getChild('UDP'), args),
             'liberio': N3xxXportMgrLiberio(self.log.getChild('liberio')),
         }
         # Spawn status monitoring thread
@@ -500,9 +512,14 @@ class n3xx(ZynqComponents, PeriphManagerBase):
         # FIXME token!
         assert self.device_info['rpc_connection'] in ('remote', 'local')
         if self.device_info['rpc_connection'] == 'remote':
+            if self.device_info['product'] == 'n320':
+                alloc_limit = 1
+            else:
+                alloc_limit = 2
             return self._xport_mgrs['udp'].request_xport(
                 sid,
                 xport_type,
+                alloc_limit
             )
         elif self.device_info['rpc_connection'] == 'local':
             return self._xport_mgrs['liberio'].request_xport(

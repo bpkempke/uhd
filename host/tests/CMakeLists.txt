@@ -15,8 +15,7 @@ include(UHDUnitTest)
 ########################################################################
 set(test_common_SOURCEDIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
 add_subdirectory(common)
-link_directories(test_common_SOURCEDIR)
-
+link_directories(${test_common_SOURCEDIR})
 
 ########################################################################
 # unit test suite
@@ -106,6 +105,24 @@ foreach(benchmark_source ${benchmark_sources})
 endforeach(benchmark_source)
 
 # Other tests that don't directly link with libuhd: (TODO find a nicer way to do this)
+if(ENABLE_DPDK)
+    include_directories(${CMAKE_BINARY_DIR}/lib/transport/)
+    include_directories(${CMAKE_SOURCE_DIR}/lib/transport/)
+    find_package(DPDK)
+    include_directories(${DPDK_INCLUDE_DIR})
+    add_executable(dpdk_test
+        dpdk_test.cpp
+        ${CMAKE_SOURCE_DIR}/lib/utils/config_parser.cpp
+        ${CMAKE_SOURCE_DIR}/lib/utils/paths.cpp
+        ${CMAKE_SOURCE_DIR}/lib/utils/pathslib.cpp
+        ${CMAKE_SOURCE_DIR}/lib/utils/prefs.cpp
+        ${CMAKE_SOURCE_DIR}/lib/transport/dpdk_zero_copy.cpp
+    )
+    target_link_libraries(dpdk_test uhd ${Boost_LIBRARIES} ${DPDK_LIBRARIES})
+    # For the DPDK test, don't automatically run (requires specific config)
+    UHD_INSTALL(TARGETS dpdk_test RUNTIME DESTINATION ${PKG_LIB_DIR}/tests COMPONENT tests)
+ENDIF(ENABLE_DPDK)
+
 include_directories(${CMAKE_BINARY_DIR}/lib/rfnoc/nocscript/)
 include_directories(${CMAKE_SOURCE_DIR}/lib/rfnoc/nocscript/)
 add_executable(nocscript_expr_test

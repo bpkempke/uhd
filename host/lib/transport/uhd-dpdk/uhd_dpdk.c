@@ -4,14 +4,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 #include "uhd_dpdk_ctx.h"
+#include "uhd_dpdk_wait.h"
 #include "uhd_dpdk_udp.h"
 #include "uhd_dpdk_driver.h"
 #include <stdlib.h>
+#include <sched.h>
 #include <rte_errno.h>
 #include <rte_malloc.h>
 #include <rte_log.h>
 
-/* FIXME: Replace with configurable values */
+/* FIXME: Descriptor ring size: Replace with configurable values */
 #define DEFAULT_RING_SIZE 512
 
 /* FIXME: This needs to be protected */
@@ -25,12 +27,25 @@ struct uhd_dpdk_ctx *ctx = NULL;
 
 /* TODO: For nice scheduling options later, make sure to separate RX and TX activity */
 
-
 int uhd_dpdk_port_count(void)
 {
     if (!ctx)
         return -ENODEV;
     return ctx->num_ports;
+}
+
+int uhd_dpdk_port_link_status(unsigned int portid)
+{
+    if (!ctx)
+        return -ENODEV;
+
+    struct uhd_dpdk_port *p = find_port(portid);
+    if (p) {
+        struct rte_eth_link link;
+        rte_eth_link_get_nowait(p->id, &link);
+        return link.link_status;
+    }
+    return -ENODEV;
 }
 
 struct eth_addr uhd_dpdk_get_eth_addr(unsigned int portid)
@@ -42,6 +57,7 @@ struct eth_addr uhd_dpdk_get_eth_addr(unsigned int portid)
     if (p) {
         memcpy(retval.addr, p->mac_addr.addr_bytes, ETHER_ADDR_LEN);
     }
+
     return retval;
 }
 
@@ -87,25 +103,66 @@ static inline int uhd_dpdk_port_init(struct uhd_dpdk_port *port,
         return -ENODEV;
 
     /* Set up Ethernet device with defaults (1 RX ring, 1 TX ring) */
-    /* FIXME: Check if hw_ip_checksum is possible */
+    retval = rte_eth_dev_set_mtu(port->id, mtu);
+    if (retval) {
+        uint16_t actual_mtu;
+        RTE_LOG(WARNING, EAL, "%d: Could not set mtu to %d\n", retval, mtu);
+        rte_eth_dev_get_mtu(port->id, &actual_mtu);
+        RTE_LOG(WARNING, EAL, "Current mtu=%d\n", actual_mtu);
+        mtu = actual_mtu;
+    }
+
+    // Require checksum offloads
+    struct rte_eth_dev_info dev_info;
+    rte_eth_dev_info_get(port->id, &dev_info);
+    uint64_t rx_offloads = DEV_RX_OFFLOAD_IPV4_CKSUM;
+    uint64_t tx_offloads = DEV_TX_OFFLOAD_IPV4_CKSUM;
+    if ((dev_info.rx_offload_capa & rx_offloads) != rx_offloads) {
+        RTE_LOG(WARNING, EAL, "%d: Only supports RX offloads 0x%0llx\n", port->id, dev_info.rx_offload_capa);
+        rte_exit(EXIT_FAILURE, "Missing required RX offloads\n");
+    }
+    if ((dev_info.tx_offload_capa & tx_offloads) != tx_offloads) {
+        RTE_LOG(WARNING, EAL, "%d: Only supports TX offloads 0x%0llx\n", port->id, dev_info.tx_offload_capa);
+        rte_exit(EXIT_FAILURE, "Missing required TX offloads\n");
+    }
+
     struct rte_eth_conf port_conf = {
         .rxmode = {
+            .offloads = rx_offloads | DEV_RX_OFFLOAD_JUMBO_FRAME,
             .max_rx_pkt_len = mtu,
             .jumbo_frame = 1,
             .hw_ip_checksum = 1,
+            .ignore_offload_bitfield = 0,
+        },
+        .txmode = {
+            .offloads = tx_offloads,
         }
     };
     retval = rte_eth_dev_configure(port->id, 1, 1, &port_conf);
     if (retval != 0)
         return retval;
 
-    retval = rte_eth_rx_queue_setup(port->id, 0, DEFAULT_RING_SIZE,
+    uint16_t rx_desc = DEFAULT_RING_SIZE;
+    uint16_t tx_desc = DEFAULT_RING_SIZE;
+    retval = rte_eth_dev_adjust_nb_rx_tx_desc(port->id, &rx_desc, &tx_desc);
+    if (retval != 0)
+        return retval;
+
+    if (rx_desc != DEFAULT_RING_SIZE)
+        RTE_LOG(WARNING, EAL, "RX descriptors changed to %d\n", rx_desc);
+    if (tx_desc != DEFAULT_RING_SIZE)
+        RTE_LOG(WARNING, EAL, "TX descriptors changed to %d\n", tx_desc);
+
+    retval = rte_eth_rx_queue_setup(port->id, 0, rx_desc,
                  rte_eth_dev_socket_id(port->id), NULL, rx_mbuf_pool);
     if (retval < 0)
         return retval;
 
-    retval = rte_eth_tx_queue_setup(port->id, 0, DEFAULT_RING_SIZE,
-                 rte_eth_dev_socket_id(port->id), NULL);
+    struct rte_eth_txconf txconf = {
+        .offloads = DEV_TX_OFFLOAD_IPV4_CKSUM
+    };
+    retval = rte_eth_tx_queue_setup(port->id, 0, tx_desc,
+                 rte_eth_dev_socket_id(port->id), &txconf);
     if (retval < 0)
         goto port_init_fail;
 
@@ -169,19 +226,19 @@ port_init_fail:
     return rte_errno;
 }
 
-static int uhd_dpdk_thread_init(struct uhd_dpdk_thread *thread, unsigned int id)
+static int uhd_dpdk_thread_init(struct uhd_dpdk_thread *thread, unsigned int lcore)
 {
     if (!ctx || !thread)
         return -EINVAL;
 
-    unsigned int socket_id = rte_lcore_to_socket_id(id);
-    thread->id = id;
+    unsigned int socket_id = rte_lcore_to_socket_id(lcore);
+    thread->lcore = lcore;
     thread->rx_pktbuf_pool = ctx->rx_pktbuf_pools[socket_id];
     thread->tx_pktbuf_pool = ctx->tx_pktbuf_pools[socket_id];
     LIST_INIT(&thread->port_list);
 
     char name[32];
-    snprintf(name, sizeof(name), "sockreq_ring_%u", id);
+    snprintf(name, sizeof(name), "sockreq_ring_%u", lcore);
     thread->sock_req_ring = rte_ring_create(
                                name,
                                UHD_DPDK_MAX_PENDING_SOCK_REQS,
@@ -190,24 +247,26 @@ static int uhd_dpdk_thread_init(struct uhd_dpdk_thread *thread, unsigned int id)
                             );
     if (!thread->sock_req_ring)
         return -ENOMEM;
+    snprintf(name, sizeof(name), "waiter_ring_%u", lcore);
+    thread->waiter_ring = rte_ring_create(
+                               name,
+                               UHD_DPDK_MAX_WAITERS,
+                               socket_id,
+                               RING_F_SC_DEQ
+                            );
+    if (!thread->waiter_ring)
+        return -ENOMEM;
     return 0;
 }
 
-
-int uhd_dpdk_init(int argc, char **argv, unsigned int num_ports,
-                  int *port_thread_mapping, int num_mbufs, int mbuf_cache_size,
-                  int mtu)
+int uhd_dpdk_init(int argc, const char **argv)
 {
     /* Init context only once */
     if (ctx)
         return 1;
 
-    if ((num_ports == 0) || (port_thread_mapping == NULL)) {
-        return -EINVAL;
-    }
-
     /* Grabs arguments intended for DPDK's EAL */
-    int ret = rte_eal_init(argc, argv);
+    int ret = rte_eal_init(argc, (char **) argv);
     if (ret < 0)
         rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
 
@@ -223,8 +282,6 @@ int uhd_dpdk_init(int argc, char **argv, unsigned int num_ports,
     ctx->num_ports = rte_eth_dev_count();
     if (ctx->num_ports < 1)
         rte_exit(EXIT_FAILURE, "Error: Found no ports\n");
-    if (ctx->num_ports < num_ports)
-        rte_exit(EXIT_FAILURE, "Error: User requested more ports than available\n");
 
     /* Get memory for thread and port data structures */
     ctx->threads = rte_zmalloc("uhd_dpdk_thread", RTE_MAX_LCORE*sizeof(struct uhd_dpdk_thread), 0);
@@ -233,6 +290,28 @@ int uhd_dpdk_init(int argc, char **argv, unsigned int num_ports,
     ctx->ports = rte_zmalloc("uhd_dpdk_port", ctx->num_ports*sizeof(struct uhd_dpdk_port), 0);
     if (!ctx->ports)
         rte_exit(EXIT_FAILURE, "Error: Could not allocate memory for port data\n");
+
+    for (size_t i = 0; i < ctx->num_ports; i++) {
+        struct uhd_dpdk_port *port = &ctx->ports[i];
+        port->id = i;
+        rte_eth_macaddr_get(port->id, &port->mac_addr);
+    }
+
+    return 0;
+}
+
+int uhd_dpdk_start(unsigned int num_ports, int *port_thread_mapping,
+                   int num_mbufs, int mbuf_cache_size, int mtu)
+{
+    if (!ctx)
+        return -EIO;
+
+    if ((num_ports == 0) || (port_thread_mapping == NULL)) {
+        return -EINVAL;
+    }
+
+    if (ctx->num_ports < num_ports)
+        rte_exit(EXIT_FAILURE, "Error: User requested more ports than available\n");
 
     /* Initialize the thread data structures */
     for (int i = rte_get_next_lcore(-1, 1, 0);
@@ -284,11 +363,10 @@ int uhd_dpdk_init(int argc, char **argv, unsigned int num_ports,
             continue;
         if (((unsigned int) thread_id) == master_lcore)
             RTE_LOG(WARNING, EAL, "User requested master lcore for port %u\n", i);
-        if (ctx->threads[thread_id].id != (unsigned int) thread_id)
+        if (ctx->threads[thread_id].lcore != (unsigned int) thread_id)
             rte_exit(EXIT_FAILURE, "Requested inactive lcore %u for port %u\n", (unsigned int) thread_id, i);
 
         struct uhd_dpdk_port *port = &ctx->ports[i];
-        port->id = i;
         port->parent = &ctx->threads[thread_id];
         ctx->threads[thread_id].num_ports++;
         LIST_INSERT_HEAD(&ctx->threads[thread_id].port_list, port, port_entry);
@@ -304,14 +382,33 @@ int uhd_dpdk_init(int argc, char **argv, unsigned int num_ports,
     /* FIXME: Create functions to do this */
     RTE_LOG(INFO, EAL, "Starting I/O threads!\n");
 
+    cpu_set_t io_cpuset;
+    CPU_ZERO(&io_cpuset);
     for (int i = rte_get_next_lcore(-1, 1, 0);
         (i < RTE_MAX_LCORE);
         i = rte_get_next_lcore(i, 1, 0))
     {
         struct uhd_dpdk_thread *t = &ctx->threads[i];
         if (!LIST_EMPTY(&t->port_list)) {
-            rte_eal_remote_launch(_uhd_dpdk_driver_main, NULL, ctx->threads[i].id);
-        }
+            rte_eal_remote_launch(_uhd_dpdk_driver_main, NULL, ctx->threads[i].lcore);
+            struct uhd_dpdk_wait_req *waiter = uhd_dpdk_waiter_alloc(UHD_DPDK_WAIT_SIMPLE);
+            if (!waiter) {
+                rte_exit(EXIT_FAILURE, "%s: Failed to get wait request\n", __func__);
+            }
+            uhd_dpdk_waiter_get(waiter);
+            uhd_dpdk_waiter_wait(waiter, -1, &ctx->threads[i]);
+            uhd_dpdk_waiter_put(waiter);
+            CPU_OR(&io_cpuset, &io_cpuset, &t->cpu_affinity);
+       }
+    }
+    cpu_set_t user_cpuset;
+    CPU_ZERO(&user_cpuset);
+    for (int i = 0; i < CPU_SETSIZE; i++) {
+        CPU_SET(i, &user_cpuset);
+    }
+    CPU_XOR(&user_cpuset, &user_cpuset, &io_cpuset);
+    if (pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &user_cpuset)) {
+        rte_exit(EXIT_FAILURE, "%s: Failed to set CPU affinity\n", __func__);
     }
     return 0;
 }
@@ -326,6 +423,12 @@ int uhd_dpdk_destroy(void)
     if (!req)
         return -ENOMEM;
 
+    req->waiter = uhd_dpdk_waiter_alloc(UHD_DPDK_WAIT_SIMPLE);
+    if (!req->waiter) {
+        rte_free(req);
+        return -ENOMEM;
+    }
+
     req->req_type = UHD_DPDK_LCORE_TERM;
 
     for (int i = rte_get_next_lcore(-1, 1, 0);
@@ -337,26 +440,19 @@ int uhd_dpdk_destroy(void)
         if (LIST_EMPTY(&t->port_list))
             continue;
 
-        if (rte_eal_get_lcore_state(t->id) == FINISHED)
+        if (rte_eal_get_lcore_state(t->lcore) == FINISHED)
             continue;
 
-        pthread_mutex_init(&req->mutex, NULL);
-        pthread_cond_init(&req->cond, NULL);
-        pthread_mutex_lock(&req->mutex);
         if (rte_ring_enqueue(t->sock_req_ring, req)) {
-            pthread_mutex_unlock(&req->mutex);
             RTE_LOG(ERR, USER2, "Failed to terminate thread %d\n", i);
+            rte_free(req->waiter);
             rte_free(req);
             return -ENOSPC;
         }
-        struct timespec timeout = {
-            .tv_sec = 1,
-            .tv_nsec = 0
-        };
-        pthread_cond_timedwait(&req->cond, &req->mutex, &timeout);
-        pthread_mutex_unlock(&req->mutex);
+        uhd_dpdk_config_req_submit(req, 1, t);
     }
 
+    uhd_dpdk_waiter_put(req->waiter);
     rte_free(req);
     return 0;
 }
