@@ -2153,20 +2153,25 @@ double ad9361_device_t::set_gain(direction_t direction, chain_t chain, const dou
 	//std::cout << "*** AD9361 0x1DF: " << int(_io_iface->peek8(0x1DF)) << std::endl;
 
 	//AII ADDITIONS: Use AGC by default
-	_setup_agc(chain, GAIN_MODE_SLOW_AGC);
-	for(int ii=0; ii < 20; ii++){
-            boost::this_thread::sleep(boost::posix_time::milliseconds(1));
-            if (chain == CHAIN_1) {
-	        gain_index = _io_iface->peek8(0x109);
-	    } else {
-	        gain_index = _io_iface->peek8(0x10c);
+	if(value >= 0){
+	    _setup_agc(chain, GAIN_MODE_SLOW_AGC);
+	    for(int ii=0; ii < 20; ii++){
+                boost::this_thread::sleep(boost::posix_time::milliseconds(1));
+                if (chain == CHAIN_1) {
+	            gain_index = _io_iface->peek8(0x109);
+	        } else {
+	            gain_index = _io_iface->peek8(0x10c);
+	        }
+	        gain_index_min = (gain_index < gain_index_min) ? gain_index : gain_index_min;
 	    }
-	    gain_index_min = (gain_index < gain_index_min) ? gain_index : gain_index_min;
+            gain_index_min -= value;
+	} else {
+	    //negative value implies fixed gain atten
+            gain_index_min += value;
 	}
 	_setup_agc(chain, GAIN_MODE_MANUAL);
 
         //Integrate in some headroom for AGC (denoted by value)
-        gain_index_min -= value;
         if(gain_index_min < 0) gain_index_min = 0;
 
 	////***BYPASS AGC****
