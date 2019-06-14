@@ -2086,7 +2086,7 @@ double ad9361_device_t::tune(direction_t direction, const double value)
     if (std::abs(last_cal_freq - tune_freq) > AD9361_CAL_VALID_WINDOW) {
         /* Run the calibration algorithms. */
         if (direction == RX) {
-            _calibrate_rf_dc_offset();
+            //_calibrate_rf_dc_offset();
             if (!_use_iq_balance_tracking)
                 _calibrate_rx_quadrature();
             if (_use_dc_offset_tracking)
