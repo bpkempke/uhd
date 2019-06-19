@@ -356,6 +356,16 @@ private:    //Members
     std::map<std::string, filter_tuple> _rx_filters;
     std::map<std::string, filter_tuple> _tx_filters;
 
+    //Store/recall RF DC offset calibrations
+    struct rf_dc_offset_regs_t {
+        uint8_t reg_174;
+        uint8_t reg_175;
+        uint8_t reg_176;
+        uint8_t reg_177;
+        uint8_t reg_178;
+    };
+    std::map<double, rf_dc_offset_regs_t> _rf_dc_offset_cals;
+
 };
 
 }}  //namespace

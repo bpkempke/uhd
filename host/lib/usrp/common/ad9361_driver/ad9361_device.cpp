@@ -2086,7 +2086,31 @@ double ad9361_device_t::tune(direction_t direction, const double value)
     if (std::abs(last_cal_freq - tune_freq) > AD9361_CAL_VALID_WINDOW) {
         /* Run the calibration algorithms. */
         if (direction == RX) {
-            //_calibrate_rf_dc_offset();
+
+            //Search for previously-run calibration at tune_freq
+            std::map<double, rf_dc_offset_regs_t>::iterator it;
+            it = _rf_dc_offset_cals.find(tune_freq);
+            if(it == _rf_dc_offset_cals.end()){
+                _calibrate_rf_dc_offset();
+
+                //Store calibration in case it's needed later
+                rf_dc_offset_regs_t dc_recall_regs;
+                dc_recall_regs.reg_174 = _io_iface->peek8(0x174);
+                dc_recall_regs.reg_175 = _io_iface->peek8(0x175);
+                dc_recall_regs.reg_176 = _io_iface->peek8(0x176);
+                dc_recall_regs.reg_177 = _io_iface->peek8(0x177);
+                dc_recall_regs.reg_178 = _io_iface->peek8(0x178);
+                _rf_dc_offset_cals[tune_freq] = dc_recall_regs;
+
+            } else {
+                rf_dc_offset_regs_t dc_recall_regs = it->second;
+                io_iface->poke8(0x174, dc_recall_regs.reg_174);
+                io_iface->poke8(0x175, dc_recall_regs.reg_175);
+                io_iface->poke8(0x176, dc_recall_regs.reg_176);
+                io_iface->poke8(0x177, dc_recall_regs.reg_177);
+                io_iface->poke8(0x178, dc_recall_regs.reg_178);
+            }
+
             if (!_use_iq_balance_tracking)
                 _calibrate_rx_quadrature();
             if (_use_dc_offset_tracking)
