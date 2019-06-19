@@ -2104,11 +2104,11 @@ double ad9361_device_t::tune(direction_t direction, const double value)
 
             } else {
                 rf_dc_offset_regs_t dc_recall_regs = it->second;
-                io_iface->poke8(0x174, dc_recall_regs.reg_174);
-                io_iface->poke8(0x175, dc_recall_regs.reg_175);
-                io_iface->poke8(0x176, dc_recall_regs.reg_176);
-                io_iface->poke8(0x177, dc_recall_regs.reg_177);
-                io_iface->poke8(0x178, dc_recall_regs.reg_178);
+                _io_iface->poke8(0x174, dc_recall_regs.reg_174);
+                _io_iface->poke8(0x175, dc_recall_regs.reg_175);
+                _io_iface->poke8(0x176, dc_recall_regs.reg_176);
+                _io_iface->poke8(0x177, dc_recall_regs.reg_177);
+                _io_iface->poke8(0x178, dc_recall_regs.reg_178);
             }
 
             if (!_use_iq_balance_tracking)
