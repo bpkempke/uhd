@@ -2092,7 +2092,7 @@ double ad9361_device_t::tune(direction_t direction, const double value)
         dc_recall_regs.reg_177 = _io_iface->peek8(0x177);
         dc_recall_regs.reg_178 = _io_iface->peek8(0x178);
         _rf_dc_offset_cals[tune_freq] = dc_recall_regs;
-        std::cout << "saving tune_freq = " << tune_freq << "; " << (int)(dc_recall_regs.reg_174) << ", " << (int)(dc_recall_regs.reg_175) << ", " << (int)(dc_recall_regs.reg_176) << ", " << (int)(dc_recall_regs.reg_177) << ", " << (int)(dc_recall_regs.reg_178) << std::endl;
+        //std::cout << "saving tune_freq = " << tune_freq << "; " << (int)(dc_recall_regs.reg_174) << ", " << (int)(dc_recall_regs.reg_175) << ", " << (int)(dc_recall_regs.reg_176) << ", " << (int)(dc_recall_regs.reg_177) << ", " << (int)(dc_recall_regs.reg_178) << std::endl;
 
     } else {
         rf_dc_offset_regs_t dc_recall_regs = it->second;
@@ -2101,7 +2101,7 @@ double ad9361_device_t::tune(direction_t direction, const double value)
         _io_iface->poke8(0x176, dc_recall_regs.reg_176);
         _io_iface->poke8(0x177, dc_recall_regs.reg_177);
         _io_iface->poke8(0x178, dc_recall_regs.reg_178);
-        std::cout << "recalling tune_freq = " << tune_freq << "; " << (int)(dc_recall_regs.reg_174) << ", " << (int)(dc_recall_regs.reg_175) << ", " << (int)(dc_recall_regs.reg_176) << ", " << (int)(dc_recall_regs.reg_177) << ", " << (int)(dc_recall_regs.reg_178) << std::endl;
+        //std::cout << "recalling tune_freq = " << tune_freq << "; " << (int)(dc_recall_regs.reg_174) << ", " << (int)(dc_recall_regs.reg_175) << ", " << (int)(dc_recall_regs.reg_176) << ", " << (int)(dc_recall_regs.reg_177) << ", " << (int)(dc_recall_regs.reg_178) << std::endl;
     }
 
     /*
