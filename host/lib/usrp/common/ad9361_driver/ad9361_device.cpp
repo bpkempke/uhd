@@ -2078,32 +2078,6 @@ double ad9361_device_t::tune(direction_t direction, const double value)
     /* Update the gain settings. */
     _reprogram_gains();
 
-    //Search for a previously-run RF DC calibration at tune_freq
-    std::map<double, rf_dc_offset_regs_t>::iterator it;
-    it = _rf_dc_offset_cals.find(tune_freq);
-    if(it == _rf_dc_offset_cals.end()){
-        _calibrate_rf_dc_offset();
-
-        //Store calibration in case it's needed later
-        rf_dc_offset_regs_t dc_recall_regs;
-        dc_recall_regs.reg_174 = _io_iface->peek8(0x174);
-        dc_recall_regs.reg_175 = _io_iface->peek8(0x175);
-        dc_recall_regs.reg_176 = _io_iface->peek8(0x176);
-        dc_recall_regs.reg_177 = _io_iface->peek8(0x177);
-        dc_recall_regs.reg_178 = _io_iface->peek8(0x178);
-        _rf_dc_offset_cals[tune_freq] = dc_recall_regs;
-        //std::cout << "saving tune_freq = " << tune_freq << "; " << (int)(dc_recall_regs.reg_174) << ", " << (int)(dc_recall_regs.reg_175) << ", " << (int)(dc_recall_regs.reg_176) << ", " << (int)(dc_recall_regs.reg_177) << ", " << (int)(dc_recall_regs.reg_178) << std::endl;
-
-    } else {
-        rf_dc_offset_regs_t dc_recall_regs = it->second;
-        _io_iface->poke8(0x174, dc_recall_regs.reg_174);
-        _io_iface->poke8(0x175, dc_recall_regs.reg_175);
-        _io_iface->poke8(0x176, dc_recall_regs.reg_176);
-        _io_iface->poke8(0x177, dc_recall_regs.reg_177);
-        _io_iface->poke8(0x178, dc_recall_regs.reg_178);
-        //std::cout << "recalling tune_freq = " << tune_freq << "; " << (int)(dc_recall_regs.reg_174) << ", " << (int)(dc_recall_regs.reg_175) << ", " << (int)(dc_recall_regs.reg_176) << ", " << (int)(dc_recall_regs.reg_177) << ", " << (int)(dc_recall_regs.reg_178) << std::endl;
-    }
-
     /*
      * Only run the following calibrations if we are more than 100MHz away
      * from the previous Tx or Rx calibration point. Leave out single shot
@@ -2112,6 +2086,33 @@ double ad9361_device_t::tune(direction_t direction, const double value)
     if (std::abs(last_cal_freq - tune_freq) > AD9361_CAL_VALID_WINDOW) {
         /* Run the calibration algorithms. */
         if (direction == RX) {
+            //_calibrate_rf_dc_offset();
+
+            //Search for a previously-run RF DC calibration at tune_freq
+            std::map<double, rf_dc_offset_regs_t>::iterator it;
+            it = _rf_dc_offset_cals.find(tune_freq);
+            if(it == _rf_dc_offset_cals.end()){
+                _calibrate_rf_dc_offset();
+        
+                //Store calibration in case it's needed later
+                rf_dc_offset_regs_t dc_recall_regs;
+                dc_recall_regs.reg_174 = _io_iface->peek8(0x174);
+                dc_recall_regs.reg_175 = _io_iface->peek8(0x175);
+                dc_recall_regs.reg_176 = _io_iface->peek8(0x176);
+                dc_recall_regs.reg_177 = _io_iface->peek8(0x177);
+                dc_recall_regs.reg_178 = _io_iface->peek8(0x178);
+                _rf_dc_offset_cals[tune_freq] = dc_recall_regs;
+                std::cout << "saving tune_freq = " << tune_freq << "; " << (int)(dc_recall_regs.reg_174) << ", " << (int)(dc_recall_regs.reg_175) << ", " << (int)(dc_recall_regs.reg_176) << ", " << (int)(dc_recall_regs.reg_177) << ", " << (int)(dc_recall_regs.reg_178) << std::endl;
+        
+            } else {
+                rf_dc_offset_regs_t dc_recall_regs = it->second;
+                _io_iface->poke8(0x174, dc_recall_regs.reg_174);
+                _io_iface->poke8(0x175, dc_recall_regs.reg_175);
+                _io_iface->poke8(0x176, dc_recall_regs.reg_176);
+                _io_iface->poke8(0x177, dc_recall_regs.reg_177);
+                _io_iface->poke8(0x178, dc_recall_regs.reg_178);
+                std::cout << "recalling tune_freq = " << tune_freq << "; " << (int)(dc_recall_regs.reg_174) << ", " << (int)(dc_recall_regs.reg_175) << ", " << (int)(dc_recall_regs.reg_176) << ", " << (int)(dc_recall_regs.reg_177) << ", " << (int)(dc_recall_regs.reg_178) << std::endl;
+            }
 
             if (!_use_iq_balance_tracking)
                 _calibrate_rx_quadrature();
