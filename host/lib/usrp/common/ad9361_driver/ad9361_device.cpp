@@ -179,6 +179,7 @@ void ad9361_device_t::_program_fir_filter(direction_t direction, chain_t chain, 
 /* Program the RX FIR Filter. */
 void ad9361_device_t::_setup_rx_fir(size_t num_taps, int32_t decimation)
 {
+    num_taps = (num_taps > 64) ? 64 : num_taps;
     if (not (decimation == 1 or decimation == 2 or decimation == 4)) {
         throw uhd::runtime_error("[ad9361_device_t] Invalid Rx FIR decimation.");
     }
@@ -192,7 +193,7 @@ void ad9361_device_t::_setup_rx_fir(size_t num_taps, int32_t decimation)
             coeffs[i] = uint16_t((decimation==4) ? fir_96_x4_coeffs[i] : hb95_coeffs[i]);
             break;
         case 64:
-            coeffs[i] = uint16_t((decimation==4) ? fir_64_x4_coeffs[i] : hb63_coeffs[i]);
+            coeffs[i] = uint16_t((decimation==4) ? fir_64_x4_coeffs[i] : aii_coeffs[i]);
             break;
         case 48:
             coeffs[i] = uint16_t((decimation==4) ? fir_48_x4_coeffs[i] : hb47_coeffs[i]);
@@ -1439,7 +1440,7 @@ double ad9361_device_t::_setup_rates(const double rate)
         divfactor = 16;
         _tfir_factor = 2;
         _rfir_factor = 2;
-    } else if ((rate >= 41e6) && (rate <= 58e6)) {
+    } else if ((rate >= 41e6) && (rate <= 49e6)) {
         // RX1 + RX2 enabled, 3, 1, 2, 2
         _regs.rxfilt = B8(11100110);
 
@@ -1449,7 +1450,7 @@ double ad9361_device_t::_setup_rates(const double rate)
         divfactor = 12;
         _tfir_factor = 2;
         _rfir_factor = 2;
-    } else if ((rate > 58e6) && (rate <= 61.44e6)) {
+    } else if ((rate > 49e6) && (rate <= 61.44e6)) {
         // RX1 + RX2 enabled, 2, 1, 2, 2
         _regs.rxfilt = B8(11001110);
 
